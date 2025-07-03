@@ -1,0 +1,463 @@
+# Project Workflow & Organization
+
+## Project Structure Overview
+
+### **Current Project State**
+```
+ZoteroCitationLinker/
+├── .taskmaster/              # ✅ Task management system
+│   ├── tasks/
+│   │   └── tasks.json       # ✅ 10 main tasks, 47 subtasks
+│   ├── config.json          # ✅ AI model configuration
+│   └── docs/               # ✅ Research documentation
+├── .cursor/                # ✅ Development rules (this system)
+│   └── rules/              # ✅ Comprehensive development guidelines
+├── zotero-source/          # ✅ Complete Zotero codebase reference
+├── zotero-make-it-red-main/     # ✅ Simple plugin example
+├── zotero-date-from-last-modified-master/ # ✅ Advanced plugin example
+├── prd.txt                 # ✅ Original project requirements
+└── [Plugin implementation] # 🚧 To be created following tasks
+```
+
+### **Target Plugin Structure**
+```
+src/                        # ✅ TypeScript source files
+├── manifest.json          # ✅ Plugin metadata
+├── bootstrap.ts           # ✅ Plugin lifecycle management
+├── lib.ts                 # ✅ Main plugin implementation
+├── citation-service.ts    # ✅ Citation generation logic
+├── server-service.ts      # ✅ HTTP server implementation
+├── context-menu.ts        # ✅ Context menu integration
+├── preferences.xhtml      # ✅ Settings UI
+└── types.ts              # ✅ TypeScript type definitions
+
+locale/                    # ✅ Internationalization
+└── en-US/
+    └── citation-linker.ftl
+
+client/                    # ✅ Build output (gitignored)
+```
+
+## Development Workflow
+
+### **Task-Driven Development Process**
+```bash
+# ✅ PHASE 1: Start Development Session
+task-master next                    # Check next available task
+task-master show <task-id>         # Read task context and requirements
+task-master set-status --id=<id> --status=in-progress
+
+# ✅ PHASE 2: Research & Plan
+# For complex tasks, research first
+task-master research "Zotero plugin context menu patterns" --save-to <id> --tree --files=zotero-source/chrome/content/zotero/
+
+# Document your implementation plan
+task-master update-subtask --id=<id> --prompt="
+IMPLEMENTATION PLAN: [Brief description]
+
+Approach:
+- [Step 1]
+- [Step 2] 
+- [Step 3]
+
+Files to create/modify:
+- [List files]
+
+Zotero APIs to use:
+- [List APIs]
+
+Dependencies:
+- [Task dependencies]
+"
+
+# ✅ PHASE 3: Implement
+# Write code following the established patterns
+# Test incrementally
+
+# ✅ PHASE 4: Document & Complete
+task-master update-subtask --id=<id> --prompt="
+IMPLEMENTATION COMPLETE: [Brief description]
+
+What was implemented:
+- [Specific changes]
+
+Key discoveries:
+- [Important findings]
+- [API patterns used]
+- [Issues encountered and solutions]
+
+Testing results:
+- [What was tested]
+- [Results]
+
+Files modified:
+- [List with brief description]
+"
+
+task-master set-status --id=<id> --status=done
+
+# ✅ PHASE 5: Commit Changes
+git add .
+git commit -m "feat: implement [feature] (task <id>)
+
+[Detailed description]
+
+Refs: task-master task <id>"
+```
+
+### **Git Workflow Standards**
+
+#### **Commit Message Format**
+```bash
+# ✅ DO: Use conventional commit format with task references
+feat: implement context menu integration (task 2.1)
+
+- Add context menu item "Copy Markdown Citation"
+- Integrate with existing Zotero item context menu
+- Handle single and multiple item selection
+- Add proper keyboard shortcut support
+
+Refs: task-master task 2.1
+
+# ✅ DO: Use these prefixes
+feat:     # New features
+fix:      # Bug fixes  
+refactor: # Code refactoring
+docs:     # Documentation changes
+test:     # Adding tests
+build:    # Build system changes
+style:    # Code style changes
+```
+
+#### **Branch Strategy**
+```bash
+# ✅ DO: Work on main branch for this project (solo development)
+# ✅ DO: Create feature branches for major task groups if needed
+
+git checkout -b task-group-1-setup     # Tasks 1-3: Project setup
+git checkout -b task-group-2-ui        # Tasks 2,3: UI components  
+git checkout -b task-group-3-server    # Tasks 5-7: Server features
+
+# ✅ DO: Merge back to main when task group is complete
+git checkout main
+git merge task-group-1-setup
+git branch -d task-group-1-setup
+```
+
+#### **Git Ignore Configuration**
+```gitignore
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+client/
+dist/
+*.xpi
+*.zip
+
+# Development
+.eslintcache/
+.tsbuildinfo
+*.tsbuildinfo
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Runtime
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+```
+
+## Quality Assurance Standards
+
+### **Before Each Commit**
+```bash
+# ✅ DO: Run these checks before committing
+npm run lint              # Check code style
+npm run type-check        # Verify TypeScript
+npm run build            # Ensure build works
+# Manual testing in Zotero for functionality
+```
+
+### **Testing Checklist**
+```typescript
+// ✅ DO: Test these scenarios for each feature
+
+// Context Menu Testing
+- [ ] Menu item appears for regular items
+- [ ] Menu item hidden for attachments/notes  
+- [ ] Works with single item selection
+- [ ] Works with multiple item selection
+- [ ] Keyboard shortcut works
+- [ ] Menu item disabled when appropriate
+
+// Citation Generation Testing
+- [ ] Works with different item types (book, article, webpage)
+- [ ] Respects user's current citation style
+- [ ] Handles missing fields gracefully
+- [ ] API links are correctly formatted
+- [ ] Clipboard operations work
+
+// Server Testing  
+- [ ] Server starts on correct port
+- [ ] Endpoints respond correctly
+- [ ] Error handling works
+- [ ] Input validation prevents crashes
+- [ ] JSON responses are properly formatted
+```
+
+### **Code Review Standards**
+```typescript
+// ✅ DO: Follow these patterns in code
+
+// Proper error handling
+try {
+  const result = await someZoteroAPI();
+  return this.formatResponse(result);
+} catch (error) {
+  this.log(`Operation failed: ${error.message}`, 'error');
+  throw error;
+}
+
+// Consistent logging
+this.log(`Starting ${operation}`, 'debug');
+this.log(`${operation} completed successfully`, 'debug');
+
+// Input validation
+if (!url || typeof url !== 'string') {
+  throw new Error('Invalid URL provided');
+}
+
+// Proper type annotations
+async function generateCitation(item: ZoteroItem): Promise<string> {
+  // Implementation
+}
+```
+
+## Reference Management
+
+### **Using Provided Resources**
+```bash
+# ✅ DO: Leverage the reference materials effectively
+
+# When implementing context menus:
+grep -r "buildItemContextMenu" zotero-source/chrome/content/zotero/
+# Look at: zotero-source/chrome/content/zotero/zoteroPane.js:3577
+
+# When implementing citation generation:
+grep -r "QuickCopy" zotero-source/chrome/content/zotero/
+# Look at: zotero-source/chrome/content/zotero/xpcom/quickCopy.js
+
+# When implementing server features:
+find zotero-source -name "*server*" -type f
+# Look at: zotero-source/chrome/content/zotero/xpcom/server/
+
+# Study the advanced example plugin:
+ls -la zotero-date-from-last-modified-master/
+# Focus on: package.json, tsconfig.json, esbuild.js, bootstrap.ts, lib.ts
+```
+
+### **Documentation Strategy**
+```markdown
+# ✅ DO: Document key decisions and patterns
+
+## Context Menu Integration
+Based on zotero-source/chrome/content/zotero/zoteroPane.js:3577
+- Use createXULElement for menu items
+- Insert after existing separators  
+- Register in addToWindow/removeFromWindow pattern
+- Handle cleanup properly
+
+## Citation Generation
+Based on zotero-source/chrome/content/zotero/xpcom/quickCopy.js
+- Use Zotero.QuickCopy.getContentFromItems()
+- Respects user's citation style preference
+- Handle both single citations and bibliography format
+
+## Server Implementation  
+Based on zotero-source/chrome/content/zotero/xpcom/server/
+- Use Zotero.Server.Endpoints pattern
+- Implement proper request validation
+- Return structured JSON responses
+```
+
+## Performance & Optimization
+
+### **Development Performance**
+```bash
+# ✅ DO: Optimize development workflow
+
+# Use watch mode for rapid iteration
+npm run watch
+
+# Use incremental building
+npm run build
+
+# Test individual components
+# Load plugin in Zotero development mode
+# Use Zotero's error console for debugging
+```
+
+### **Runtime Performance**
+```typescript
+// ✅ DO: Optimize for Zotero's performance expectations
+
+// Lazy load heavy operations
+private async ensureTranslationReady() {
+  if (!this._translationService) {
+    this._translationService = new Zotero.Translate.Web();
+  }
+}
+
+// Cache expensive computations
+private _citationCache = new Map<string, string>();
+
+generateCitation(item: ZoteroItem): string {
+  const cacheKey = item.key;
+  if (this._citationCache.has(cacheKey)) {
+    return this._citationCache.get(cacheKey)!;
+  }
+  
+  const citation = this._generateCitationInternal(item);
+  this._citationCache.set(cacheKey, citation);
+  return citation;
+}
+
+// Use async operations properly
+async processItems(items: ZoteroItem[]): Promise<void> {
+  // Process in batches to avoid blocking UI
+  const batchSize = 10;
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.all(batch.map(item => this.processItem(item)));
+    
+    // Yield control to UI
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+}
+```
+
+## Integration Guidelines
+
+### **Obsidian Plugin Preparation**
+```typescript
+// ✅ DO: Design API for future Obsidian integration
+
+interface CitationLinkerAPI {
+  // Simple URL-to-citation endpoint
+  addFromURL(url: string): Promise<{
+    status: 'success' | 'error';
+    citation?: string;
+    zoteroLink?: string;
+    itemKey?: string;
+    message?: string;
+  }>;
+  
+  // Health check endpoint  
+  ping(): Promise<{ status: 'ok'; version: string }>;
+}
+
+// ✅ DO: Document API for future use
+/*
+Obsidian Plugin Integration Notes:
+
+The Zotero Citation Linker exposes HTTP endpoints for external integration:
+
+POST http://localhost:23119/citation-linker/add-from-url
+Body: { "url": "https://example.com/paper" }
+Response: {
+  "status": "success",
+  "citation": "(Author, 2023)",
+  "zoteroLink": "https://api.zotero.org/users/123/items/ABC123", 
+  "itemKey": "ABC123"
+}
+
+The Obsidian plugin can use this to:
+1. Send URLs from selected text or clipboard
+2. Insert formatted citations
+3. Store Zotero links for reference
+4. Enable click-to-open-in-Zotero functionality
+*/
+```
+
+## Troubleshooting Guide
+
+### **Common Development Issues**
+```bash
+# ❌ Issue: Plugin not loading in Zotero
+# ✅ Solutions:
+- Check manifest.json syntax (use JSON validator)
+- Verify bootstrap.ts exports startup/shutdown functions
+- Check Zotero error console for specific errors
+- Ensure strict_min_version matches your Zotero version
+
+# ❌ Issue: TypeScript compilation errors
+# ✅ Solutions:
+- npm install zotero-types
+- Check tsconfig.json target and lib settings
+- Add proper declare statements for Zotero globals
+
+# ❌ Issue: Context menu not appearing
+# ✅ Solutions:
+- Verify addToWindow/removeFromWindow registration
+- Check menu insertion point (use proper separator)
+- Ensure ZoteroPane reference is correct
+- Test with different item types
+
+# ❌ Issue: Server endpoints not responding
+# ✅ Solutions:
+- Check Zotero.Server.Endpoints registration
+- Verify endpoint path format ("/plugin-name/endpoint")
+- Test with curl or Postman
+- Check server port conflicts
+```
+
+### **Debugging Workflow**
+```typescript
+// ✅ DO: Add debugging infrastructure
+
+class DebugHelper {
+  static enabled = Zotero.Prefs.get('extensions.citation-linker.debug', false);
+  
+  static log(component: string, message: string, data?: any) {
+    if (!this.enabled) return;
+    
+    const prefix = `CitationLinker[${component}]:`;
+    const fullMessage = data ? `${message} ${JSON.stringify(data)}` : message;
+    Zotero.debug(`${prefix} ${fullMessage}`);
+  }
+  
+  static error(component: string, error: Error) {
+    const prefix = `CitationLinker[${component}] ERROR:`;
+    Zotero.logError(`${prefix} ${error.message}`);
+    if (error.stack) {
+      Zotero.debug(`${prefix} Stack: ${error.stack}`);
+    }
+  }
+}
+
+// Usage in implementation
+DebugHelper.log('ContextMenu', 'Adding menu item', { itemCount: items.length });
+DebugHelper.log('Server', 'Processing request', { url: req.url });
+DebugHelper.error('Citation', new Error('Invalid item type'));
+```
+
+Follow [zotero-development.mdc](mdc:.cursor/rules/zotero-development.mdc) for Zotero APIs, [typescript-build.mdc](mdc:.cursor/rules/typescript-build.mdc) for build system, and [taskmaster-integration.mdc](mdc:.cursor/rules/taskmaster-integration.mdc) for task workflow.

@@ -1,0 +1,153 @@
+# Zotero Citation Linker Plugin: Requirements Document
+
+## 1. Introduction
+
+### 1.1. Project Vision
+
+To create a Zotero plugin that bridges the gap between Zotero's reference management capabilities and modern Markdown-based note-taking applications like Obsidian. The plugin will provide two core pieces of functionality:
+
+1. A quick way to copy fully-formatted, API-linked Markdown citations for items already in a Zotero library.
+2. A local server to programmatically add new web resources to Zotero from external applications and return a fully-formed citation, automating the "capture-and-cite" workflow.
+
+This tool is intended for researchers, students, and writers who rely on both Zotero for reference management and Markdown editors for writing and knowledge management.
+
+### 1.2. Target Platform
+
+- **Zotero Version:** Zotero 7 and later.
+- **Technology Stack:** The plugin will be developed as a WebExtension using modern JavaScript/TypeScript, HTML, and CSS.
+
+---
+
+## 2. Core Functionality: Markdown Citation Link Copier
+
+This feature allows users to quickly generate a rich Markdown link for one or more items directly from the Zotero interface.
+
+### 2.1. User Interaction
+
+- **Trigger 1: Context Menu:** When a user right-clicks on one or more selected items in their Zotero library, a new option shall appear in the context menu, labeled "Copy Markdown Link".
+- **Trigger 2: Keyboard Shortcut:** A configurable keyboard shortcut shall be available to perform the same action on the currently selected item(s).
+
+### 2.2. Functional Requirements
+
+1. **Citation Generation:**
+    - The plugin must use Zotero's internal citation processor to generate an in-text citation for the selected item(s).
+    - The citation format must be based on the user's currently active "Quick Copy" citation style defined in Zotero's preferences.
+
+2. **API Link Construction:**
+    - The plugin must generate a persistent API link pointing to the specific Zotero item.
+    - It must correctly differentiate between personal and group libraries to construct the appropriate URL format:
+        - **Personal Library:** `https://api.zotero.org/users/{{userID}}/items/{{itemKey}}`
+        - **Group Library:** `https://api.zotero.org/groups/{{groupID}}/items/{{itemKey}}`
+    - The plugin must have programmatic access to retrieve the current user's `userID` and the `groupID` for any group libraries.
+
+3. **Final Output:**
+    - The final output copied to the clipboard must be a well-formed Markdown link: `[<generated_citation>](<api_url>)`.
+    - Example: `[(Nakamoto, 2008)](https://api.zotero.org/users/12973/items/JBLVHVU5)`
+
+4. **Multiple Items:**
+    - If multiple items are selected, the plugin shall generate a single combined citation (as Zotero's processor would, e.g., `(Nakamoto, 2008; Doe, 2021)`) but should link to the API URL of the **first selected item** to maintain a valid 1-to-1 link structure. A more complex handling can be considered in future versions.
+
+### 2.3. User Feedback
+
+- Upon successful copy, a brief, non-intrusive notification should appear within Zotero (e.g., "Markdown link copied to clipboard").
+
+---
+
+## 3. Advanced Functionality: URL-to-Reference API Service
+
+This feature transforms the Zotero plugin into a local HTTP server, enabling external applications (like the corresponding Obsidian plugin) to programmatically add references to Zotero.
+
+### 3.1. Server Implementation
+
+1. **Local HTTP Server:** The plugin must start a local HTTP server when Zotero is launched.
+2. **Host and Port:**
+    - The server must **only** listen on the `localhost` interface for security.
+    - It will use a default port (e.g., `23119`, the Zotero default), which must be configurable in the plugin's settings to avoid potential conflicts with other applications.
+3. **Lifecycle Management:** The server should start and stop gracefully with Zotero to avoid orphaned processes.
+
+### 3.2. API Endpoint Definition
+
+- **Route:** `POST /add-from-url`
+- **Method:** `POST`
+- **Description:** Receives a URL, uses Zotero's translation service to extract bibliographic metadata, creates a new item in the library, and returns the details of the new reference.
+
+### 3.3. API Contract
+
+#### 3.3.1. Request (from Client -> to Zotero Plugin)
+
+The request body must be a JSON object with the following structure:
+
+```json
+{
+  "url": "https://www.example-article.com/path/to/resource"
+}
+```
+
+#### 3.3.2. Success Response (from Zotero Plugin -> to Client)
+
+- **Status Code:** `200 OK`
+- **Body:** A JSON object containing the newly created reference details.
+
+```json
+{
+  "status": "success",
+  "citation": "(Nakamoto, 2008)",
+  "zoteroLink": "https://api.zotero.org/users/12973/items/JBLVHVU5",
+  "itemKey": "JBLVHVU5"
+}
+```
+
+#### 3.3.3. Error Response (from Zotero Plugin -> to Client)
+
+- **Status Code:** `400 Bad Request` (for invalid input) or `500 Internal Server Error` (for processing failures).
+- **Body:** A JSON object describing the error.
+
+```json
+{
+  "status": "error",
+  "message": "A specific error message, e.g., 'No metadata could be found at the provided URL.' or 'Invalid URL provided.'"
+}
+```
+
+### 3.4. Core Processing Workflow
+
+1. **Receive Request:** The server listens for and receives a `POST` request on the `/add-from-url` endpoint.
+2. **Invoke Zotero Translator:** The plugin calls Zotero's internal web translation engine with the provided URL. This is an asynchronous operation.
+3. **Create Zotero Item:**
+    - If the translation is successful, the plugin uses the returned metadata to create a new item in the user's main library.
+    - The operation should be atomic. If item creation fails, an error should be returned.
+4. **Generate Response Data:** After the new item is saved, the plugin retrieves its `itemKey` and `userID`/`groupID`. It then generates the formatted citation and the API link.
+5. **Send Response:** The plugin sends the appropriate JSON response (success or error) back to the client.
+
+### 3.5. Error Handling & User Feedback
+
+- **Translation Failure:** If Zotero's translator cannot find any metadata at the URL, the plugin should return a `500` error with a clear message.
+- **Server Failure:** If the local server fails to start (e.g., due to a port conflict), the plugin must notify the user within the Zotero UI and log the error to the Zotero console.
+
+---
+
+## 4. Non-Functional Requirements
+
+### 4.1. Configuration
+
+- The plugin must provide a settings panel within Zotero's preferences.
+- **Configurable options must include:**
+  - The port for the local HTTP server.
+  - A way to enable/disable the keyboard shortcut.
+  - A field to customize the keyboard shortcut.
+
+### 4.2. Performance
+
+- The plugin should have minimal impact on Zotero's startup time and general performance.
+- The HTTP server and all related processes must be lightweight.
+- All I/O operations (network requests, file access) must be asynchronous to prevent blocking the Zotero UI.
+
+### 4.3. Security
+
+- The HTTP server must bind exclusively to `localhost` to prevent any external network access.
+- Input from API requests (i.e., the URL) should be handled safely, though the primary risk is mitigated by Zotero's own translation sandboxing.
+
+### 4.4. Documentation
+
+- A `README.md` file must be included with clear instructions on how to install and use the plugin, including details on the API for developers of client applications.
+- The code should be well-commented, particularly the API and server implementation sections.

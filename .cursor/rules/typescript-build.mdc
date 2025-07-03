@@ -1,0 +1,465 @@
+# TypeScript & Build System for Zotero Plugins
+
+## TypeScript Configuration
+
+### **tsconfig.json Setup**
+```json
+{
+  "compilerOptions": {
+    "target": "es2017",                    // ✅ Required for Firefox 115+ compatibility
+    "module": "commonjs",                  // ✅ Required for Zotero environment
+    "esModuleInterop": true,              // ✅ Enables import/export syntax
+    "allowSyntheticDefaultImports": true, // ✅ Better import experience
+    "removeComments": false,              // ✅ Keep comments for debugging
+    "sourceMap": false,                   // ✅ Skip source maps for production
+    "downlevelIteration": true,           // ✅ Support for...of loops
+    "lib": ["es2017", "dom"],            // ✅ Required APIs
+    "strict": true,                       // ✅ Enable strict type checking
+    "noImplicitAny": false,              // ✅ Allow gradual typing
+    "skipLibCheck": true,                 // ✅ Skip checking node_modules
+    "typeRoots": [
+      "./node_modules/@types",
+      "./node_modules/zotero-types"       // ✅ Zotero type definitions
+    ]
+  },
+  "include": [
+    "src/**/*",                          // ✅ Source files
+    "*.ts"                               // ✅ Root level TypeScript files
+  ],
+  "exclude": [
+    "node_modules",                      // ✅ Exclude dependencies
+    "client",                            // ✅ Exclude build output
+    "**/*.spec.ts",                      // ✅ Exclude test files
+    "**/*.test.ts"
+  ]
+}
+```
+
+### **Zotero Type Declarations**
+```typescript
+// ✅ DO: Add comprehensive type declarations at the top of files
+declare const Zotero: any;
+declare const Components: any;
+declare const Services: any;
+declare const ChromeUtils: any;
+declare const dump: (msg: string) => void;
+
+// ✅ DO: Extract Components interfaces for better typing
+const {
+  interfaces: Ci,
+  results: Cr,
+  utils: Cu,
+  Constructor: CC,
+} = Components;
+
+// ✅ DO: Type your plugin namespace
+interface ZoteroCitationLinkerPlugin {
+  id: string;
+  version: string;
+  rootURI: string;
+  initialized: boolean;
+  
+  init(params: { id: string; version: string; rootURI: string }): void;
+  log(message: string, level?: 'debug' | 'error'): void;
+  install(): void;
+  uninstall(): void;
+}
+
+// ✅ DO: Declare your plugin with proper typing
+declare global {
+  namespace Zotero {
+    let CitationLinker: ZoteroCitationLinkerPlugin;
+  }
+}
+```
+
+### **Type-Safe Plugin Implementation**
+```typescript
+// ✅ DO: Use class-based approach with proper typing
+Zotero.CitationLinker = new class implements ZoteroCitationLinkerPlugin {
+  id: string = '';
+  version: string = '';
+  rootURI: string = '';
+  initialized: boolean = false;
+  private notifierID: number | null = null;
+
+  init({ id, version, rootURI }: { id: string; version: string; rootURI: string }): void {
+    if (this.initialized) return;
+    
+    this.id = id;
+    this.version = version;
+    this.rootURI = rootURI;
+    this.initialized = true;
+  }
+
+  log(message: string, level: 'debug' | 'error' = 'debug'): void {
+    const prefix = `CitationLinker: ${message}`;
+    if (level === 'error') {
+      Zotero.logError(prefix);
+    } else {
+      Zotero.debug(prefix);
+    }
+  }
+
+  install(): void {
+    this.log('Installing plugin');
+    this.notifierID = Zotero.Notifier.registerObserver(this, ['item']);
+  }
+
+  uninstall(): void {
+    this.log('Uninstalling plugin');
+    if (this.notifierID) {
+      Zotero.Notifier.unregisterObserver(this.notifierID);
+      this.notifierID = null;
+    }
+  }
+};
+```
+
+## Build System Configuration
+
+### **ESBuild Setup (esbuild.js)**
+```javascript
+const esbuild = require('esbuild');
+const fs = require('fs');
+const path = require('path');
+
+// ✅ DO: Build configuration optimized for Zotero
+async function build() {
+  console.log('Building Zotero Citation Linker...');
+  
+  try {
+    // Ensure client directory exists
+    if (!fs.existsSync('client')) {
+      fs.mkdirSync('client', { recursive: true });
+    }
+
+    // Build TypeScript files
+    await esbuild.build({
+      entryPoints: [
+        'src/bootstrap.ts',
+        'src/lib.ts'
+      ],
+      outdir: 'client',
+      bundle: false,                    // ✅ Don't bundle - Zotero loads separately
+      platform: 'node',               // ✅ Node.js environment
+      target: 'firefox115',           // ✅ Target Firefox version
+      format: 'iife',                 // ✅ Immediately invoked function
+      keepNames: true,                 // ✅ Preserve function names for debugging
+      sourcemap: false,                // ✅ Skip source maps
+      minify: false,                   // ✅ Keep readable for development
+      define: {
+        'process.env.NODE_ENV': '"production"'
+      }
+    });
+
+    // Copy manifest and other static files
+    copyStaticFiles();
+    
+    console.log('✅ Build completed successfully');
+  } catch (error) {
+    console.error('❌ Build failed:', error);
+    process.exit(1);
+  }
+}
+
+function copyStaticFiles() {
+  // Copy manifest.json
+  if (fs.existsSync('src/manifest.json')) {
+    fs.copyFileSync('src/manifest.json', 'client/manifest.json');
+  }
+  
+  // Copy locale files
+  if (fs.existsSync('locale')) {
+    copyDirectory('locale', 'client/locale');
+  }
+  
+  // Copy preferences files
+  if (fs.existsSync('src/preferences.xhtml')) {
+    fs.copyFileSync('src/preferences.xhtml', 'client/preferences.xhtml');
+  }
+}
+
+function copyDirectory(src, dest) {
+  if (!fs.existsSync(dest)) {
+    fs.mkdirSync(dest, { recursive: true });
+  }
+  
+  const files = fs.readdirSync(src);
+  for (const file of files) {
+    const srcPath = path.join(src, file);
+    const destPath = path.join(dest, file);
+    
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyDirectory(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+if (require.main === module) {
+  build();
+}
+
+module.exports = { build };
+```
+
+### **Package.json Configuration**
+```json
+{
+  "name": "zotero-citation-linker",
+  "version": "1.0.0",
+  "description": "Zotero plugin for enhanced citation linking functionality",
+  "main": "client/bootstrap.js",
+  "scripts": {
+    "lint": "eslint src --ext .ts --cache --cache-location .eslintcache/",
+    "type-check": "tsc --noEmit",
+    "prebuild": "npm run lint && npm run type-check",
+    "build": "node esbuild.js",
+    "dev": "npm run build && npm run package",
+    "package": "cd client && zip -r ../zotero-citation-linker.xpi *",
+    "clean": "rimraf client *.xpi .eslintcache",
+    "watch": "nodemon --watch src --ext ts,json,xhtml --exec \"npm run build\"",
+    "test": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.0.0",
+    "nodemon": "^3.0.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.0.0",
+    "zotero-types": "^3.1.7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/zotero-citation-linker"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
+```
+
+## Development Workflow
+
+### **Development Scripts**
+```bash
+# ✅ DO: Use these commands during development
+
+# Install dependencies
+npm install
+
+# Type check without building
+npm run type-check
+
+# Build for development
+npm run build
+
+# Build and package for testing
+npm run dev
+
+# Watch for changes and rebuild
+npm run watch
+
+# Clean build artifacts
+npm run clean
+
+# Production build
+npm run build
+```
+
+### **File Structure Organization**
+```
+zotero-citation-linker/
+├── src/                     # ✅ Source TypeScript files
+│   ├── bootstrap.ts         # ✅ Plugin lifecycle
+│   ├── lib.ts              # ✅ Main implementation
+│   ├── manifest.json       # ✅ Plugin manifest
+│   ├── preferences.xhtml   # ✅ Settings UI (optional)
+│   └── types.ts            # ✅ Custom type definitions
+├── locale/                 # ✅ Internationalization files
+│   └── en-US/
+│       └── citation-linker.ftl
+├── client/                 # ✅ Build output (gitignored)
+├── node_modules/           # ✅ Dependencies (gitignored)
+├── package.json           # ✅ Build configuration
+├── tsconfig.json          # ✅ TypeScript config
+├── esbuild.js             # ✅ Build script
+├── .eslintrc.js           # ✅ Linting rules
+├── .gitignore             # ✅ Git ignore rules
+└── README.md              # ✅ Documentation
+```
+
+### **ESLint Configuration (.eslintrc.js)**
+```javascript
+module.exports = {
+  parser: '@typescript-eslint/parser',
+  extends: [
+    'eslint:recommended',
+    '@typescript-eslint/recommended'
+  ],
+  env: {
+    node: true,
+    browser: true,
+    es2017: true
+  },
+  globals: {
+    // ✅ Zotero globals
+    'Zotero': 'readonly',
+    'Components': 'readonly',
+    'Services': 'readonly',
+    'ChromeUtils': 'readonly',
+    'dump': 'readonly'
+  },
+  rules: {
+    '@typescript-eslint/no-explicit-any': 'off',      // ✅ Allow any for Zotero APIs
+    '@typescript-eslint/no-unused-vars': 'warn',      // ✅ Warn on unused variables
+    'prefer-const': 'error',                          // ✅ Prefer const over let
+    'no-console': 'warn'                              // ✅ Warn on console usage
+  },
+  parserOptions: {
+    ecmaVersion: 2017,
+    sourceType: 'module'
+  }
+};
+```
+
+## Development Best Practices
+
+### **Incremental Building**
+```typescript
+// ✅ DO: Structure code for incremental development
+export interface CitationService {
+  generateCitation(item: any): string;
+  generateAPILink(item: any): string;
+}
+
+export interface ServerService {
+  start(port: number): void;
+  stop(): void;
+  registerEndpoint(path: string, handler: Function): void;
+}
+
+// ✅ DO: Implement interfaces gradually
+class CitationServiceImpl implements CitationService {
+  generateCitation(item: any): string {
+    // Implementation for task 4
+    throw new Error('Not implemented yet');
+  }
+  
+  generateAPILink(item: any): string {
+    // Implementation for task 4  
+    throw new Error('Not implemented yet');
+  }
+}
+```
+
+### **Error Handling Patterns**
+```typescript
+// ✅ DO: Use Result types for better error handling
+type Result<T, E = Error> = 
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+async function translateURL(url: string): Promise<Result<TranslationResult>> {
+  try {
+    const result = await Zotero.Translate.Web.translate(url);
+    return { success: true, data: result };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error : new Error(String(error))
+    };
+  }
+}
+
+// ✅ DO: Handle results properly
+const result = await translateURL(url);
+if (result.success) {
+  const citation = this.generateCitation(result.data.item);
+  // Success path
+} else {
+  this.log(`Translation failed: ${result.error.message}`, 'error');
+  // Error path
+}
+```
+
+### **Testing Setup**
+```typescript
+// ✅ DO: Add simple testing utilities
+export class TestUtils {
+  static createMockItem(type: string = 'journalArticle'): any {
+    return {
+      itemType: type,
+      isRegularItem: () => type !== 'attachment' && type !== 'note',
+      isAttachment: () => type === 'attachment',
+      isNote: () => type === 'note',
+      key: 'ABC123',
+      library: { editable: true },
+      getField: (field: string) => `mock-${field}`
+    };
+  }
+  
+  static createMockZoteroPane(): any {
+    return {
+      getSelectedItems: () => [TestUtils.createMockItem()]
+    };
+  }
+}
+
+// ✅ DO: Test individual functions
+function testCitationGeneration() {
+  const mockItem = TestUtils.createMockItem();
+  const citation = CitationLinker.generateCitation(mockItem);
+  console.assert(citation.length > 0, 'Citation should not be empty');
+}
+```
+
+## Common Issues & Solutions
+
+### **Build Issues**
+```bash
+# ❌ Issue: TypeScript compilation errors
+# ✅ Solution: Check tsconfig.json target and lib settings
+
+# ❌ Issue: Zotero types not found
+# ✅ Solution: Install zotero-types package
+npm install --save-dev zotero-types
+
+# ❌ Issue: ESBuild fails on certain Node.js APIs
+# ✅ Solution: Use platform: 'node' and avoid browser-specific APIs
+```
+
+### **Runtime Issues**
+```typescript
+// ❌ Issue: Plugin not loading in Zotero
+// ✅ Solution: Check manifest.json syntax and bootstrap exports
+
+// ❌ Issue: Type errors at runtime
+// ✅ Solution: Add proper declarations for Zotero globals
+
+// ❌ Issue: Async/await not working
+// ✅ Solution: Ensure target: 'es2017' in tsconfig.json
+```
+
+### **Debugging Tips**
+```typescript
+// ✅ DO: Add comprehensive logging
+private debugLog(operation: string, data?: any): void {
+  if (Zotero.Prefs.get('extensions.citation-linker.debug', false)) {
+    const message = data ? `${operation}: ${JSON.stringify(data)}` : operation;
+    this.log(message, 'debug');
+  }
+}
+
+// ✅ DO: Use Zotero's error console for debugging
+// Tools > Developer > Error Console in Zotero
+
+// ✅ DO: Test incremental changes
+// Build and test each subtask individually
+```
+
+Follow [zotero-development.mdc](mdc:.cursor/rules/zotero-development.mdc) for Zotero API patterns and [taskmaster-integration.mdc](mdc:.cursor/rules/taskmaster-integration.mdc) for development workflow.

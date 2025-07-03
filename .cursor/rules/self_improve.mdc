@@ -1,0 +1,159 @@
+---
+description: Guidelines for continuously improving Cursor rules based on emerging code patterns and best practices in Zotero plugin development
+globs: **/*
+alwaysApply: true
+---
+
+- **Rule Improvement Triggers:**
+  - New Zotero API patterns discovered during implementation
+  - Repeated similar implementations across plugin components
+  - Common error patterns that could be prevented  
+  - New libraries or tools being used consistently
+  - Emerging best practices in Zotero plugin development
+  - Patterns from analyzing provided example plugins
+
+- **Analysis Process:**
+  - Compare new code with existing rules
+  - Identify Zotero-specific patterns that should be standardized
+  - Look for references to Zotero source code documentation
+  - Check for consistent error handling patterns in Zotero context
+  - Monitor TypeScript build and runtime patterns
+  - Analyze Taskmaster workflow integration effectiveness
+
+- **Rule Updates:**
+  - **Add New Rules When:**
+    - A Zotero API pattern is used in 3+ components
+    - Common plugin bugs could be prevented by a rule
+    - Taskmaster workflow patterns repeatedly mentioned in implementation logs
+    - New security or performance patterns emerge for Zotero plugins
+    - Build system improvements are discovered during development
+
+  - **Modify Existing Rules When:**
+    - Better examples exist in the implemented plugin code
+    - Additional edge cases are discovered in Zotero integration
+    - Related rules have been updated based on implementation experience
+    - TypeScript or build configuration improvements are found
+
+- **Zotero-Specific Pattern Recognition:**
+  ```typescript
+  // If you see repeated patterns like:
+  const items = ZoteroPane.getSelectedItems();
+  if (items.every(item => item.isRegularItem())) {
+    const format = Zotero.QuickCopy.getFormatFromURL();
+    const content = Zotero.QuickCopy.getContentFromItems(items, format);
+  }
+  
+  // Consider adding to [zotero-development.mdc](mdc:.cursor/rules/zotero-development.mdc):
+  // - Standard item selection patterns
+  // - QuickCopy integration patterns  
+  // - Item type validation workflows
+  ```
+
+- **Taskmaster Integration Pattern Recognition:**
+  ```bash
+  # If you see repeated patterns like:
+  task-master update-subtask --id=2.1 --prompt="
+  IMPLEMENTATION COMPLETE: Context menu integration
+  
+  Key findings:
+  - Use createXULElement for Zotero 7 compatibility
+  - Insert after separator using insertBefore pattern
+  - Register cleanup in removeFromWindow
+  "
+  
+  # Consider adding to [taskmaster-integration.mdc](mdc:.cursor/rules/taskmaster-integration.mdc):
+  # - Standard logging templates for different types of discoveries
+  # - Common implementation completion patterns
+  # - Research documentation workflows
+  ```
+
+- **TypeScript & Build Pattern Recognition:**
+  ```typescript
+  // If you see repeated patterns like:
+  declare const Zotero: any;
+  declare const Components: any;
+  declare const Services: any;
+  
+  const {
+    interfaces: Ci,
+    results: Cr,
+    utils: Cu,
+  } = Components;
+  
+  // Consider adding to [typescript-build.mdc](mdc:.cursor/rules/typescript-build.mdc):
+  // - Standard declaration patterns for Zotero globals
+  // - Common interface extraction patterns
+  // - Build configuration optimization
+  ```
+
+- **Rule Quality Checks:**
+  - Rules should be actionable and specific to Zotero development
+  - Examples should come from actual plugin implementation code
+  - References should point to specific Zotero source files
+  - Patterns should be consistently enforced across plugin components
+  - Taskmaster workflow integration should be clear and practical
+
+- **Continuous Improvement Opportunities:**
+  - Monitor task implementation logs for common patterns
+  - Track common development questions in subtask updates
+  - Update rules after major plugin component implementations
+  - Add links to relevant Zotero source code files
+  - Cross-reference related rules between files
+  - Document relationships between Zotero APIs and plugin patterns
+
+- **Rule Deprecation:**
+  - Mark outdated Zotero API patterns as deprecated
+  - Remove rules that no longer apply to Zotero 7 development
+  - Update references to deprecated Zotero APIs
+  - Document migration paths for old plugin patterns
+  - Update TypeScript patterns when build tooling evolves
+
+- **Documentation Updates:**
+  - Keep examples synchronized with implemented plugin code
+  - Update references to Zotero source files when they change
+  - Maintain links between related rules across different files
+  - Document breaking changes in Zotero API patterns
+  - Update Taskmaster workflow patterns based on implementation experience
+
+- **Example Improvement Workflow:**
+  1. **Pattern Detection**: Notice repeated code in citation generation components
+  2. **Rule Analysis**: Check if existing [zotero-development.mdc](mdc:.cursor/rules/zotero-development.mdc) covers the pattern
+  3. **Enhancement**: Add specific example to Citation Generation section
+  4. **Cross-Reference**: Link to relevant Zotero source files
+  5. **Integration**: Update [taskmaster-integration.mdc](mdc:.cursor/rules/taskmaster-integration.mdc) if workflow patterns emerge
+  6. **Validation**: Test new rule guidance against implemented code
+
+- **Project-Specific Improvements:**
+  - **Context Menu Patterns**: Based on task 2 implementation experience
+  - **Citation Generation Patterns**: Based on task 4 implementation experience  
+  - **HTTP Server Patterns**: Based on tasks 5-7 implementation experience
+  - **TypeScript Configuration**: Based on build system evolution
+  - **Taskmaster Workflow**: Based on actual development session patterns
+
+Follow [cursor_rules.mdc](mdc:.cursor/rules/cursor_rules.mdc) for proper rule formatting and structure.
+
+## Implementation-Driven Rule Enhancement
+
+### **Monitor These Areas for Rule Updates:**
+- **Zotero API Usage**: Track which APIs work well vs problematic ones
+- **TypeScript Patterns**: Note type declaration patterns that work consistently
+- **Build System Evolution**: Document improvements to esbuild configuration
+- **Testing Patterns**: Develop testing guidelines as plugin grows
+- **Performance Optimizations**: Document performance patterns that emerge
+- **Error Handling**: Standardize error patterns specific to Zotero context
+
+### **Sources for Rule Improvements:**
+- Subtask implementation logs in Taskmaster
+- Code patterns in implemented plugin components
+- Discoveries about Zotero source code integration
+- Build system configuration improvements
+- TypeScript compilation and runtime issue resolutions
+- Plugin testing and debugging patterns that prove effective
+
+### **Rule Update Triggers:**
+- New component implementation reveals better patterns
+- Common issues emerge across multiple subtasks
+- Zotero API usage patterns prove more effective
+- TypeScript configuration improvements are discovered
+- Taskmaster workflow optimizations are identified
+- Integration patterns with external tools evolve

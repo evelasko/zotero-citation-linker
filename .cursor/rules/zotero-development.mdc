@@ -1,0 +1,459 @@
+---
+
+description: Zotero plugin development guidelines and API references
+globs: **/*.{js,ts,json,xhtml}
+alwaysApply: true
+---
+
+# Zotero Plugin Development Guidelines
+
+## Quick Reference Sources
+
+- **Zotero Source Code**: `zotero-source/chrome/content/zotero/` - Complete Zotero codebase
+- **Example Plugins**: 
+  - Simple: `zotero-make-it-red-main/` - Basic plugin structure
+  - Advanced: `zotero-date-from-last-modified-master/` - TypeScript, build system
+- **Task Context**: `.taskmaster/tasks/tasks.json` - Implementation roadmap
+- **Research Documentation**: `.taskmaster/docs/research/` - Latest findings
+
+## Plugin Architecture Patterns
+
+### **Modern Plugin Structure (Recommended)**
+```
+plugin/
+├── manifest.json           # WebExtension manifest
+├── bootstrap.ts            # Plugin lifecycle (TypeScript preferred)
+├── lib.ts                  # Main plugin implementation
+├── package.json           # Build configuration & dependencies
+├── tsconfig.json          # TypeScript configuration
+├── esbuild.js             # Build script
+├── client/                # Generated output directory
+│   ├── manifest.json      # Final manifest
+│   ├── bootstrap.js       # Compiled bootstrap
+│   └── lib.js            # Compiled library
+├── locale/               # Localization files
+│   └── en-US/
+│       └── plugin.ftl    # Fluent localization
+└── preferences.xhtml     # Settings UI (optional)
+```
+
+### **Essential Files**
+
+#### **manifest.json Structure**
+```json
+{
+  "manifest_version": 2,
+  "name": "Plugin Name",
+  "version": "1.0.0",
+  "description": "Plugin description",
+  "applications": {
+    "zotero": {
+      "id": "plugin-id@domain.com",
+      "update_url": "https://example.com/updates.json",
+      "strict_min_version": "7.0",
+      "strict_max_version": "7.1.*"
+    }
+  }
+}
+```
+
+#### **Bootstrap Pattern (bootstrap.ts)**
+```typescript
+// Global declarations for Zotero 7
+declare const Zotero: any;
+declare const Components: any;
+declare const Services: any;
+
+async function waitForZotero() {
+  if (typeof Zotero != 'undefined') {
+    await Zotero.initializationPromise;
+    return;
+  }
+  // Implementation for Zotero 6 compatibility...
+}
+
+export async function startup({ id, version, resourceURI, rootURI = resourceURI.spec }) {
+  await waitForZotero();
+  
+  // Load main library
+  Services.scriptloader.loadSubScript(`${rootURI}lib.js`, { Zotero });
+  
+  // Initialize plugin
+  Zotero.YourPlugin.install();
+}
+
+export function shutdown() {
+  Zotero.YourPlugin?.uninstall();
+  Zotero.YourPlugin = undefined;
+}
+```
+
+#### **Main Library Pattern (lib.ts)**
+```typescript
+declare const Zotero: any;
+
+Zotero.YourPlugin = new class {
+  private notifierID: number;
+  
+  constructor() {
+    this.log('Plugin starting');
+  }
+  
+  log(msg: string) {
+    Zotero.debug(`YourPlugin: ${msg}`);
+  }
+  
+  install() {
+    // Register observers, UI elements, etc.
+    this.notifierID = Zotero.Notifier.registerObserver(this, ['item']);
+  }
+  
+  uninstall() {
+    // Clean up
+    if (this.notifierID) {
+      Zotero.Notifier.unregisterObserver(this.notifierID);
+    }
+  }
+  
+  // Plugin functionality here...
+};
+```
+
+## Core Zotero APIs
+
+### **Citation Generation (QuickCopy API)**
+```javascript
+// ✅ DO: Use Zotero's QuickCopy system for citation generation
+const format = Zotero.QuickCopy.getFormatFromURL(Zotero.QuickCopy.lastActiveURL);
+const content = Zotero.QuickCopy.getContentFromItems(items, format);
+
+// ✅ DO: Generate citations using the active style
+const citation = Zotero.QuickCopy.getContentFromItems(
+  [item], 
+  format, 
+  null, 
+  true // asCitations = true for in-text citations
+);
+
+// ✅ DO: Generate API links for items
+const userID = Zotero.Users.getCurrentUserID();
+const apiURL = `https://api.zotero.org/users/${userID}/items/${item.key}`;
+
+// ❌ DON'T: Manually format citations - use Zotero's processor
+```
+
+### **Context Menu Integration**
+```javascript
+// ✅ DO: Add items to existing context menus
+this.addToWindow = function(window) {
+  const doc = window.document;
+  const menu = doc.getElementById('zotero-itemmenu');
+  
+  const menuitem = doc.createXULElement('menuitem');
+  menuitem.id = 'your-plugin-menuitem';
+  menuitem.setAttribute('label', 'Copy Markdown Link');
+  menuitem.addEventListener('command', () => {
+    this.handleMenuCommand();
+  });
+  
+  // Insert after separator
+  const separator = menu.querySelector('menuseparator');
+  menu.insertBefore(menuitem, separator.nextSibling);
+};
+
+// ✅ DO: Clean up on unload
+this.removeFromWindow = function(window) {
+  const doc = window.document;
+  doc.getElementById('your-plugin-menuitem')?.remove();
+};
+```
+
+### **HTTP Server Implementation**
+```javascript
+// ✅ DO: Use Zotero's built-in server infrastructure
+const endpoint = function() {};
+endpoint.prototype = {
+  supportedMethods: ["POST"],
+  supportedDataTypes: ["application/json"],
+  
+  init: async function(req) {
+    // Validate request
+    if (!req.data?.url) {
+      return [400, "application/json", JSON.stringify({
+        status: "error", 
+        message: "URL required"
+      })];
+    }
+    
+    try {
+      // Use Zotero's translation system
+      const result = await this.translateURL(req.data.url);
+      
+      return [200, "application/json", JSON.stringify({
+        status: "success",
+        citation: result.citation,
+        zoteroLink: result.apiURL,
+        itemKey: result.itemKey
+      })];
+    } catch (error) {
+      return [500, "application/json", JSON.stringify({
+        status: "error",
+        message: error.message
+      })];
+    }
+  }
+};
+
+// Register endpoint
+Zotero.Server.Endpoints["/your-plugin/add-from-url"] = endpoint;
+```
+
+### **Web Translation API**
+```javascript
+// ✅ DO: Use Zotero's translation system
+async translateURL(url) {
+  const translation = new Zotero.Translate.Web();
+  translation.setTranslator(null); // Auto-detect
+  translation.setDocument(await this.loadDocument(url));
+  
+  const translators = await translation.getTranslators();
+  if (!translators.length) {
+    throw new Error('No translators found for this URL');
+  }
+  
+  translation.setTranslator(translators[0]);
+  
+  return new Promise((resolve, reject) => {
+    translation.setHandler('itemDone', (obj, item) => {
+      resolve({
+        item: item,
+        citation: this.generateCitation(item),
+        apiURL: this.generateAPIURL(item),
+        itemKey: item.key
+      });
+    });
+    
+    translation.setHandler('error', reject);
+    translation.translate();
+  });
+}
+```
+
+### **Preferences and Settings**
+```javascript
+// ✅ DO: Use Zotero.Prefs for plugin settings
+Zotero.Prefs.set('extensions.your-plugin.serverPort', 23119);
+const port = Zotero.Prefs.get('extensions.your-plugin.serverPort', 23119);
+
+// ✅ DO: Register preference pane in startup
+Zotero.PreferencePanes.register({
+  pluginID: 'your-plugin@domain.com',
+  src: rootURI + 'preferences.xhtml',
+  scripts: [rootURI + 'preferences.js']
+});
+```
+
+### **Item and Library Access**
+```javascript
+// ✅ DO: Access items through proper API
+const items = ZoteroPane.getSelectedItems();
+const item = Zotero.Items.get(itemID);
+
+// ✅ DO: Check item types properly
+if (item.isRegularItem()) {
+  // Regular bibliographic item
+} else if (item.isAttachment()) {
+  // File attachment
+} else if (item.isNote()) {
+  // Note item
+}
+
+// ✅ DO: Respect library permissions
+if (!item.library.editable) {
+  throw new Error('Library is read-only');
+}
+```
+
+## Build System & Development
+
+### **TypeScript Configuration**
+```json
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "removeComments": false,
+    "sourceMap": false,
+    "lib": ["es2017", "dom"],
+    "typeRoots": ["./node_modules/@types", "./node_modules/zotero-types"]
+  },
+  "include": ["*.ts"],
+  "exclude": ["node_modules", "**/*.spec.ts"]
+}
+```
+
+### **Build Script (esbuild.js)**
+```javascript
+const esbuild = require('esbuild');
+const path = require('path');
+
+esbuild.build({
+  entryPoints: ['bootstrap.ts', 'lib.ts'],
+  bundle: false,
+  outdir: 'client',
+  platform: 'node',
+  target: 'firefox115',
+  format: 'iife',
+}).catch(() => process.exit(1));
+```
+
+### **Package.json Scripts**
+```json
+{
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.js",
+    "dev": "npm run build && zotero-plugin-zipup client your-plugin",
+    "lint": "eslint . --ext .ts",
+    "test": "npm run build"
+  },
+  "dependencies": {
+    "typescript": "^5.0.0",
+    "esbuild": "^0.20.0",
+    "zotero-types": "^3.0.0"
+  }
+}
+```
+
+## Security & Best Practices
+
+### **Input Validation**
+```javascript
+// ✅ DO: Validate all inputs
+function validateURL(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error('Only HTTP/HTTPS URLs allowed');
+    }
+    return parsed.href;
+  } catch (error) {
+    throw new Error('Invalid URL format');
+  }
+}
+
+// ✅ DO: Sanitize user inputs
+function sanitizeInput(input) {
+  return input.replace(/[<>'"&]/g, '');
+}
+```
+
+### **Server Security**
+```javascript
+// ✅ DO: Bind server to localhost only
+const server = Zotero.Server;
+server.init(port, '127.0.0.1'); // localhost only
+
+// ✅ DO: Validate request origins if needed
+if (req.headers.origin && !this.isAllowedOrigin(req.headers.origin)) {
+  return [403, "text/plain", "Forbidden"];
+}
+```
+
+### **Error Handling**
+```javascript
+// ✅ DO: Provide meaningful error messages
+try {
+  const result = await this.processRequest(data);
+  return this.successResponse(result);
+} catch (error) {
+  this.log(`Error processing request: ${error.message}`);
+  
+  if (error.name === 'ValidationError') {
+    return [400, "application/json", JSON.stringify({
+      status: "error",
+      message: "Invalid input: " + error.message
+    })];
+  }
+  
+  return [500, "application/json", JSON.stringify({
+    status: "error", 
+    message: "Internal server error"
+  })];
+}
+```
+
+## Testing & Debugging
+
+### **Development Workflow**
+```javascript
+// ✅ DO: Add comprehensive logging
+log(message, level = 'debug') {
+  const prefix = `YourPlugin: ${message}`;
+  if (level === 'error') {
+    Zotero.logError(prefix);
+  } else {
+    Zotero.debug(prefix);
+  }
+}
+
+// ✅ DO: Test with multiple item types
+const testItems = [
+  'book', 'journalArticle', 'webpage', 'thesis'
+].map(type => {
+  const item = new Zotero.Item(type);
+  // Set required fields...
+  return item;
+});
+```
+
+### **Plugin Development Checklist**
+- [ ] Plugin installs and uninstalls cleanly
+- [ ] No console errors on startup/shutdown
+- [ ] UI elements appear in correct locations
+- [ ] Context menus work with selected items
+- [ ] Server endpoints respond correctly
+- [ ] Preferences are saved and loaded
+- [ ] Works with both single and multiple items
+- [ ] Handles edge cases (no selection, invalid URLs, etc.)
+- [ ] Internationalization support
+- [ ] Performance acceptable with large libraries
+
+## Implementation Priority
+
+### **Phase 1: Core Structure**
+1. Set up TypeScript build system
+2. Create manifest.json and bootstrap.ts
+3. Implement basic plugin lifecycle
+
+### **Phase 2: Citation Features**
+1. Context menu integration
+2. Citation generation using QuickCopy
+3. API URL construction
+4. Clipboard operations
+
+### **Phase 3: Server Features**
+1. HTTP server setup
+2. URL translation endpoint
+3. Error handling and validation
+4. Response formatting
+
+### **Phase 4: Polish**
+1. Preferences UI
+2. Keyboard shortcuts
+3. Internationalization
+4. Testing and debugging
+
+## Reference Implementation Files
+
+Study these files for patterns:
+- `zotero-source/chrome/content/zotero/xpcom/quickCopy.js` - Citation generation
+- `zotero-source/chrome/content/zotero/zoteroPane.js` - Context menus (buildItemContextMenu)
+- `zotero-source/chrome/content/zotero/xpcom/server/` - Server implementation
+- `zotero-date-from-last-modified-master/` - Modern TypeScript structure
+- `zotero-make-it-red-main/` - Simple plugin patterns
+
+- Validate all user inputs
+- Bind server to localhost only
+- Use parameterized database queries
+- Sanitize URLs before processing

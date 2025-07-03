@@ -1,0 +1,706 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Setup WebExtension Project Structure",
+        "description": "Initialize the project repository with the necessary structure for a Zotero 7 WebExtension plugin",
+        "details": "1. Create a new repository with standard WebExtension structure\n2. Setup package.json with dependencies for Zotero plugin development\n3. Configure TypeScript for type safety\n4. Create the manifest.json file with appropriate permissions\n5. Setup build scripts for development and production\n6. Initialize the plugin bootstrap file that will be loaded by Zotero\n7. Create folder structure for components, services, and utilities\n8. Setup linting and code formatting tools\n9. Add README.md with basic project information",
+        "testStrategy": "Verify the project structure builds correctly and can be loaded as a development plugin in Zotero 7. Test the build process to ensure it produces a valid .xpi file that can be installed in Zotero.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create project directory structure",
+            "description": "Set up the initial folder structure for the WebExtension project",
+            "dependencies": [],
+            "details": "Create the following directories: src/, dist/, public/, and config/. Within src/, create subdirectories for components/, styles/, and utils/.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Initialize project and install dependencies",
+            "description": "Set up package.json and install necessary dependencies",
+            "dependencies": [
+              1
+            ],
+            "details": "Run 'npm init -y' to create package.json. Install dev dependencies: webpack, webpack-cli, typescript, ts-loader, @types/webextension-polyfill, web-ext, eslint, prettier. Install runtime dependency: webextension-polyfill.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Configure TypeScript and linting",
+            "description": "Set up TypeScript configuration and ESLint for code quality",
+            "dependencies": [
+              2
+            ],
+            "details": "Create tsconfig.json with appropriate compiler options. Set up .eslintrc.js with rules for TypeScript. Create .prettierrc for code formatting rules.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Create WebExtension manifest and HTML files",
+            "description": "Set up the manifest.json and necessary HTML files for the extension",
+            "dependencies": [
+              1
+            ],
+            "details": "Create manifest.json in the public/ directory with extension metadata. Create HTML files for popup, options, and background pages in public/.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Configure Webpack and build scripts",
+            "description": "Set up Webpack for bundling and create npm scripts for development and building",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Create webpack.config.js in the config/ directory. Set up entry points, output, and loaders for TypeScript. Add npm scripts in package.json for 'build', 'watch', and 'start' using webpack and web-ext.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement Context Menu Integration",
+        "description": "Add a 'Copy Markdown Link' option to the Zotero context menu when items are selected",
+        "details": "1. Create a context menu service that registers with Zotero's UI\n2. Add the 'Copy Markdown Link' option to the context menu when items are selected\n3. Implement the event handler for the context menu option\n4. Connect the handler to the citation generation service (to be implemented in task 4)\n5. Ensure the menu item is only visible when appropriate items are selected\n6. Register the context menu in the plugin's bootstrap process\n\nCode example:\n```javascript\nZotero.ContextMenu.register({\n  id: 'zotero-citation-linker-context-menu',\n  label: 'Copy Markdown Link',\n  condition: {\n    target: 'item',\n    required: true\n  },\n  callback: (event, items) => {\n    if (items && items.length > 0) {\n      this.generateAndCopyMarkdownLink(items);\n    }\n  }\n});\n```",
+        "testStrategy": "Test the context menu by selecting different types of items in Zotero and verifying the menu option appears correctly. Test with single and multiple selections. Verify the handler is called with the correct items when the menu option is clicked.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design and implement context menu UI",
+            "description": "Create the visual elements for the context menu integration in Zotero",
+            "dependencies": [],
+            "details": "Design the layout and appearance of the context menu option for citation generation. Implement the UI elements using Zotero's UI framework or appropriate technologies.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement event handling for context menu",
+            "description": "Set up event listeners and handlers for the context menu interactions",
+            "dependencies": [
+              1
+            ],
+            "details": "Create event listeners for right-click actions on selected text or items. Implement handlers to show the context menu and respond to user selections.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Develop connection to citation generation service",
+            "description": "Establish a connection between Zotero and the citation generation service",
+            "dependencies": [],
+            "details": "Implement the necessary API calls or integration points to connect Zotero with the citation generation service. Handle authentication and data transfer between the two systems.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Integrate context menu with citation generation",
+            "description": "Connect the context menu actions with the citation generation service",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Link the user's context menu selection to the appropriate citation generation request. Handle the response from the service and insert the generated citation into the user's document or clipboard.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Implement Keyboard Shortcut Functionality",
+        "description": "Create a configurable keyboard shortcut to trigger the Markdown link copy functionality",
+        "details": "1. Create a keyboard shortcut service that registers with Zotero\n2. Implement the shortcut handler to trigger the citation generation\n3. Connect to Zotero's preferences system to make the shortcut configurable\n4. Store and retrieve the shortcut configuration\n5. Add validation to prevent conflicts with existing Zotero shortcuts\n\nCode example:\n```javascript\nconst DEFAULT_SHORTCUT = 'shift+ctrl+c';\n\nclass KeyboardShortcutService {\n  constructor() {\n    this.shortcut = Zotero.Prefs.get('extensions.zotero-citation-linker.shortcut') || DEFAULT_SHORTCUT;\n  }\n  \n  register() {\n    Zotero.Shortcuts.register(this.shortcut, (event) => {\n      const items = ZoteroPane.getSelectedItems();\n      if (items && items.length > 0) {\n        CitationService.generateAndCopyMarkdownLink(items);\n      }\n    });\n  }\n  \n  updateShortcut(newShortcut) {\n    // Unregister old shortcut\n    Zotero.Shortcuts.unregister(this.shortcut);\n    // Update and save new shortcut\n    this.shortcut = newShortcut;\n    Zotero.Prefs.set('extensions.zotero-citation-linker.shortcut', newShortcut);\n    // Register new shortcut\n    this.register();\n  }\n}\n```",
+        "testStrategy": "Test the keyboard shortcut functionality by configuring different shortcuts and verifying they trigger the citation generation. Test with conflicting shortcuts to ensure proper validation. Verify the shortcut configuration is saved and retrieved correctly.",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement shortcut registration mechanism",
+            "description": "Create a system to register and manage keyboard shortcuts within Zotero",
+            "dependencies": [],
+            "details": "Develop a function to register shortcuts, integrate with Zotero's existing key handling system, and ensure proper initialization during startup",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Design and implement shortcut configuration UI",
+            "description": "Create a user interface for configuring custom keyboard shortcuts",
+            "dependencies": [
+              1
+            ],
+            "details": "Add a new section to Zotero's preferences window for shortcut configuration, implement UI elements for viewing and editing shortcuts, and ensure changes are saved to user preferences",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement shortcut conflict prevention and handling",
+            "description": "Develop a system to detect and prevent conflicts between shortcuts",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Create a mechanism to check for conflicts when registering or modifying shortcuts, implement user notifications for conflicts, and provide options for resolving conflicts",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implement Citation Generation Service",
+        "description": "Create a service that generates formatted citations using Zotero's citation processor and constructs API links",
+        "details": "1. Create a citation service that interfaces with Zotero's citation processor\n2. Implement methods to generate citations based on the user's active Quick Copy style\n3. Add functionality to construct API links for both personal and group libraries\n4. Implement special handling for multiple selected items\n5. Create a clipboard utility to copy the final Markdown link\n6. Add user feedback notification\n\nCode example:\n```javascript\nclass CitationService {\n  static async generateAndCopyMarkdownLink(items) {\n    if (!items || items.length === 0) return false;\n    \n    // Get citation style from Zotero preferences\n    const quickCopyStyle = Zotero.Prefs.get('export.quickCopy.setting');\n    \n    // Generate citation using Zotero's processor\n    const citation = await Zotero.QuickCopy.getContentFromItems(items, quickCopyStyle, 'text');\n    \n    // Get the first item for the API link\n    const firstItem = items[0];\n    const library = firstItem.library;\n    const itemKey = firstItem.key;\n    \n    // Construct API URL based on library type\n    let apiUrl;\n    if (library.type === 'user') {\n      apiUrl = `https://api.zotero.org/users/${library.id}/items/${itemKey}`;\n    } else if (library.type === 'group') {\n      apiUrl = `https://api.zotero.org/groups/${library.id}/items/${itemKey}`;\n    }\n    \n    // Create Markdown link\n    const markdownLink = `[${citation}](${apiUrl})`;\n    \n    // Copy to clipboard\n    await Zotero.Utilities.Internal.copyTextToClipboard(markdownLink);\n    \n    // Show notification\n    new Zotero.Notification('success', {\n      message: 'Markdown link copied to clipboard',\n      timeout: 2500\n    });\n    \n    return true;\n  }\n}\n```",
+        "testStrategy": "Test the citation generation with various item types (articles, books, etc.). Verify the API links are correctly constructed for both personal and group libraries. Test with multiple selected items to ensure the citation combines correctly but links to the first item. Verify the clipboard operation and notification work as expected.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up Zotero citation processor integration",
+            "description": "Integrate Zotero's citation processor into the plugin to handle citation generation",
+            "dependencies": [],
+            "details": "Research Zotero's citation processor API, set up necessary dependencies, and create a wrapper function to interact with the processor",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement item type handling",
+            "description": "Create functions to handle different item types (e.g., books, articles, websites) for citation generation",
+            "dependencies": [
+              1
+            ],
+            "details": "Identify all possible item types, create separate handlers for each type, and implement logic to extract relevant information for citations",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Develop library management system",
+            "description": "Implement functionality to manage and interact with different Zotero libraries",
+            "dependencies": [
+              1
+            ],
+            "details": "Create functions to fetch, cache, and update library data, implement user authentication for accessing personal libraries",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Create citation style selector",
+            "description": "Implement a system for users to select and apply different citation styles",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Integrate Zotero's citation style repository, create a user interface for style selection, and implement style application logic",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Implement citation generation service",
+            "description": "Create the main service to generate citations based on user input and selected styles",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Implement the core citation generation logic, integrating all previous components and handling edge cases",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Develop error handling and validation",
+            "description": "Implement robust error handling and input validation for the citation generation service",
+            "dependencies": [
+              5
+            ],
+            "details": "Create comprehensive error checks, implement input sanitization, and develop user-friendly error messages",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Implement Local HTTP Server",
+        "description": "Create a local HTTP server that listens on localhost for API requests from external applications",
+        "details": "1. Implement a lightweight HTTP server using Zotero's built-in HTTP server capabilities\n2. Configure the server to listen only on localhost for security\n3. Implement server lifecycle management (start/stop with Zotero)\n4. Add error handling for port conflicts\n5. Create a configurable port setting\n\nCode example:\n```javascript\nclass ApiServer {\n  constructor() {\n    this.port = Zotero.Prefs.get('extensions.zotero-citation-linker.port') || 23119;\n    this.server = null;\n  }\n  \n  start() {\n    try {\n      this.server = new Zotero.Server.HttpServer();\n      this.server.listen(this.port, 'localhost');\n      this.registerEndpoints();\n      Zotero.debug('Zotero Citation Linker API server started on port ' + this.port);\n      return true;\n    } catch (error) {\n      Zotero.debug('Failed to start Zotero Citation Linker API server: ' + error.message);\n      new Zotero.Notification('error', {\n        message: `Failed to start API server on port ${this.port}. ${error.message}`,\n        timeout: 0\n      });\n      return false;\n    }\n  }\n  \n  stop() {\n    if (this.server) {\n      this.server.close();\n      this.server = null;\n      Zotero.debug('Zotero Citation Linker API server stopped');\n    }\n  }\n  \n  registerEndpoints() {\n    // Will be implemented in Task 6\n  }\n  \n  updatePort(newPort) {\n    this.stop();\n    this.port = newPort;\n    Zotero.Prefs.set('extensions.zotero-citation-linker.port', newPort);\n    return this.start();\n  }\n}\n```",
+        "testStrategy": "Test server startup and shutdown during Zotero lifecycle events. Verify the server only listens on localhost. Test port configuration changes and conflict handling. Use network tools to confirm the server is running and accessible only from localhost.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up basic HTTP server",
+            "description": "Implement a basic HTTP server using Zotero's built-in HTTP server functionality",
+            "dependencies": [],
+            "details": "Use Zotero.Server.Connector to create a local HTTP server. Define the server's port (e.g., 23119) and implement basic request handling.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement security measures",
+            "description": "Add security features to protect the local HTTP server from unauthorized access",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement authentication mechanisms, such as API keys or tokens. Use HTTPS for secure communication. Restrict server access to localhost only.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Handle server lifecycle",
+            "description": "Manage server startup and shutdown in sync with Zotero's lifecycle",
+            "dependencies": [
+              1
+            ],
+            "details": "Hook into Zotero's startup and shutdown events to properly initialize and terminate the HTTP server. Implement error handling for server failures.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement request routing",
+            "description": "Create a routing system to handle different API endpoints",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Develop a routing mechanism to direct incoming requests to appropriate handlers based on URL paths. Implement handlers for different API functionalities.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Test and optimize server performance",
+            "description": "Conduct thorough testing and optimize server performance",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Perform unit and integration tests for all server functionalities. Optimize request handling for better performance. Implement logging for debugging and monitoring.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement URL-to-Reference API Endpoint",
+        "description": "Create the /add-from-url API endpoint that receives URLs, extracts metadata, and creates Zotero items",
+        "details": "1. Register the POST /add-from-url endpoint with the HTTP server\n2. Implement request parsing and validation\n3. Create a service to interface with Zotero's translation engine\n4. Implement the item creation workflow\n5. Generate and return the appropriate response\n6. Add comprehensive error handling\n\nCode example:\n```javascript\nclass UrlToReferenceEndpoint {\n  static register(server) {\n    server.registerEndpoint({\n      method: 'POST',\n      path: '/add-from-url',\n      handler: async (request, response) => {\n        try {\n          // Parse request body\n          const body = JSON.parse(request.body);\n          \n          // Validate URL\n          if (!body.url || typeof body.url !== 'string') {\n            return this.sendErrorResponse(response, 400, 'Invalid URL provided');\n          }\n          \n          // Translate URL to metadata\n          const translationResult = await this.translateUrl(body.url);\n          if (!translationResult.success) {\n            return this.sendErrorResponse(response, 500, translationResult.message);\n          }\n          \n          // Create Zotero item\n          const newItem = await this.createZoteroItem(translationResult.items[0]);\n          \n          // Generate citation\n          const citation = await CitationService.generateCitation([newItem]);\n          \n          // Construct API link\n          const library = newItem.library;\n          const itemKey = newItem.key;\n          let zoteroLink;\n          \n          if (library.type === 'user') {\n            zoteroLink = `https://api.zotero.org/users/${library.id}/items/${itemKey}`;\n          } else {\n            zoteroLink = `https://api.zotero.org/groups/${library.id}/items/${itemKey}`;\n          }\n          \n          // Send success response\n          this.sendSuccessResponse(response, {\n            status: 'success',\n            citation: citation,\n            zoteroLink: zoteroLink,\n            itemKey: itemKey\n          });\n          \n        } catch (error) {\n          Zotero.debug('Error in /add-from-url endpoint: ' + error.message);\n          this.sendErrorResponse(response, 500, 'Internal server error: ' + error.message);\n        }\n      }\n    });\n  }\n  \n  static async translateUrl(url) {\n    // Use Zotero's translation engine to extract metadata\n    try {\n      const translate = new Zotero.Translate.Web();\n      translate.setLocation(url);\n      const translators = await translate.getTranslators();\n      \n      if (!translators.length) {\n        return { success: false, message: 'No compatible translator found for the URL' };\n      }\n      \n      translate.setTranslator(translators[0]);\n      const items = await translate.translate();\n      \n      if (!items.length) {\n        return { success: false, message: 'No metadata could be found at the provided URL' };\n      }\n      \n      return { success: true, items: items };\n    } catch (error) {\n      return { success: false, message: 'Translation error: ' + error.message };\n    }\n  }\n  \n  static async createZoteroItem(translatedItem) {\n    // Create a new item in the user's library\n    const newItem = new Zotero.Item(translatedItem.itemType);\n    \n    // Copy fields from translated item\n    for (const field in translatedItem) {\n      if (field !== 'itemType' && field !== 'creators' && field !== 'attachments' && field !== 'notes') {\n        newItem.setField(field, translatedItem[field]);\n      }\n    }\n    \n    // Add creators\n    if (translatedItem.creators) {\n      for (const creator of translatedItem.creators) {\n        newItem.addCreator(creator);\n      }\n    }\n    \n    // Save the item\n    await newItem.saveTx();\n    \n    // Process attachments if any\n    if (translatedItem.attachments) {\n      for (const attachment of translatedItem.attachments) {\n        // Handle attachments as needed\n      }\n    }\n    \n    return newItem;\n  }\n  \n  static sendSuccessResponse(response, data) {\n    response.status = 200;\n    response.setHeader('Content-Type', 'application/json');\n    response.write(JSON.stringify(data));\n    response.end();\n  }\n  \n  static sendErrorResponse(response, status, message) {\n    response.status = status;\n    response.setHeader('Content-Type', 'application/json');\n    response.write(JSON.stringify({\n      status: 'error',\n      message: message\n    }));\n    response.end();\n  }\n}\n```",
+        "testStrategy": "Test the endpoint with various valid and invalid URLs. Verify the translation process works correctly for different types of web resources. Test error handling for various failure scenarios (invalid URL, no metadata found, etc.). Verify the created items appear correctly in the Zotero library with all metadata properly populated. Test the response format matches the API contract.",
+        "priority": "high",
+        "dependencies": [
+          4,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up API endpoint structure",
+            "description": "Create the basic structure for the URL-to-Reference API endpoint",
+            "dependencies": [],
+            "details": "Define the route, HTTP method, and basic request handling for the API endpoint. Implement input validation for the URL parameter.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Integrate Zotero's translation engine",
+            "description": "Set up and configure Zotero's translation engine for metadata extraction",
+            "dependencies": [
+              1
+            ],
+            "details": "Import and initialize Zotero's translation engine. Configure it to handle various web resource types and prepare it for use in the API endpoint.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement URL fetching and processing",
+            "description": "Fetch the content of the provided URL and prepare it for metadata extraction",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Use an HTTP client to fetch the content of the provided URL. Handle different content types and prepare the data for processing by Zotero's translation engine.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Extract metadata using Zotero's translation engine",
+            "description": "Process the fetched content to extract relevant metadata",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Use Zotero's translation engine to extract metadata from the processed content. Handle different resource types and ensure all relevant metadata is captured.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Create Zotero item from extracted metadata",
+            "description": "Generate a Zotero item using the extracted metadata",
+            "dependencies": [
+              4
+            ],
+            "details": "Use the extracted metadata to create a new Zotero item. Ensure all relevant fields are populated and the item is properly formatted according to Zotero's standards.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 6,
+            "title": "Implement error handling and logging",
+            "description": "Add comprehensive error handling and logging throughout the API endpoint",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "details": "Implement try-catch blocks, input validation, and appropriate error responses. Set up logging for both successful operations and errors to aid in debugging and monitoring.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 7,
+            "title": "Test and refine the API endpoint",
+            "description": "Conduct thorough testing and make necessary refinements",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "details": "Create unit tests and integration tests for the API endpoint. Test with various URL types and edge cases. Refine the implementation based on test results and performance metrics.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Implement Plugin Preferences UI",
+        "description": "Create a preferences panel for the plugin within Zotero's preferences system",
+        "details": "1. Create a preferences XUL/HTML file for the plugin\n2. Implement UI controls for configuring the HTTP server port\n3. Add UI for enabling/disabling and customizing the keyboard shortcut\n4. Connect the UI to the preference storage system\n5. Implement validation for user inputs\n6. Add save/cancel functionality\n\nCode example:\n```javascript\n// preferences.js\nvar ZoteroCitationLinkerPreferences = {\n  init: function() {\n    // Initialize port field\n    const portField = document.getElementById('zotero-citation-linker-port');\n    portField.value = Zotero.Prefs.get('extensions.zotero-citation-linker.port') || 23119;\n    \n    // Initialize shortcut enabled checkbox\n    const shortcutEnabled = document.getElementById('zotero-citation-linker-shortcut-enabled');\n    shortcutEnabled.checked = Zotero.Prefs.get('extensions.zotero-citation-linker.shortcutEnabled') || true;\n    \n    // Initialize shortcut field\n    const shortcutField = document.getElementById('zotero-citation-linker-shortcut');\n    shortcutField.value = Zotero.Prefs.get('extensions.zotero-citation-linker.shortcut') || 'shift+ctrl+c';\n    shortcutField.disabled = !shortcutEnabled.checked;\n    \n    // Add event listeners\n    shortcutEnabled.addEventListener('change', function() {\n      shortcutField.disabled = !this.checked;\n    });\n  },\n  \n  save: function() {\n    // Validate and save port\n    const portField = document.getElementById('zotero-citation-linker-port');\n    const port = parseInt(portField.value, 10);\n    if (isNaN(port) || port < 1024 || port > 65535) {\n      alert('Port must be a number between 1024 and 65535');\n      return false;\n    }\n    Zotero.Prefs.set('extensions.zotero-citation-linker.port', port);\n    \n    // Save shortcut settings\n    const shortcutEnabled = document.getElementById('zotero-citation-linker-shortcut-enabled');\n    Zotero.Prefs.set('extensions.zotero-citation-linker.shortcutEnabled', shortcutEnabled.checked);\n    \n    const shortcutField = document.getElementById('zotero-citation-linker-shortcut');\n    Zotero.Prefs.set('extensions.zotero-citation-linker.shortcut', shortcutField.value);\n    \n    // Apply changes\n    window.opener.ZoteroCitationLinker.applyPreferences();\n    \n    return true;\n  }\n};\n```\n\n```xml\n<!-- preferences.xul -->\n<?xml version=\"1.0\"?>\n<vbox xmlns=\"http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul\">\n  <setting type=\"integer\" id=\"zotero-citation-linker-port\" title=\"HTTP Server Port\" pref=\"extensions.zotero-citation-linker.port\"/>\n  \n  <setting type=\"bool\" id=\"zotero-citation-linker-shortcut-enabled\" title=\"Enable Keyboard Shortcut\" pref=\"extensions.zotero-citation-linker.shortcutEnabled\"/>\n  \n  <setting type=\"string\" id=\"zotero-citation-linker-shortcut\" title=\"Keyboard Shortcut\" pref=\"extensions.zotero-citation-linker.shortcut\"/>\n</vbox>\n```",
+        "testStrategy": "Test the preferences UI by changing settings and verifying they are saved correctly. Test validation of inputs (e.g., invalid port numbers). Verify changes in preferences are correctly applied to the plugin functionality. Test the UI appearance in different Zotero themes.",
+        "priority": "medium",
+        "dependencies": [
+          3,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design the preferences UI layout",
+            "description": "Create a mockup of the preferences UI layout, including all necessary controls and sections",
+            "dependencies": [],
+            "details": "Use Zotero's existing preferences UI style as a guide. Include sections for API key input, sync frequency settings, and any other plugin-specific options. Consider using tabs if there are multiple categories of settings.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Implement the preferences UI in XUL/HTML",
+            "description": "Create the XUL/HTML code for the preferences UI based on the design mockup",
+            "dependencies": [
+              1
+            ],
+            "details": "Use appropriate XUL/HTML elements for each control (e.g., textbox for API key, radiogroup for sync frequency). Ensure proper labeling and grouping of controls. Include any necessary CSS for styling.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Connect UI controls to Zotero's preference system",
+            "description": "Implement the logic to save and load preferences using Zotero's preference system",
+            "dependencies": [
+              2
+            ],
+            "details": "Use Zotero.Prefs to save and retrieve preference values. Implement event listeners for UI controls to update preferences when changed. Ensure default values are set for all preferences.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement validation and error handling",
+            "description": "Add validation for user inputs and implement error handling in the preferences UI",
+            "dependencies": [
+              3
+            ],
+            "details": "Validate the API key format and test its validity. Implement error messages for invalid inputs. Ensure the UI provides clear feedback on the status of saved preferences and any errors encountered.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Implement Plugin Lifecycle Management",
+        "description": "Create the plugin initialization and shutdown logic to properly manage resources",
+        "details": "1. Implement the plugin bootstrap function that runs when Zotero loads the plugin\n2. Create shutdown handlers to clean up resources when Zotero closes\n3. Implement preference change listeners to apply changes without requiring a restart\n4. Add error recovery mechanisms\n5. Implement logging for debugging\n\nCode example:\n```javascript\nvar ZoteroCitationLinker = {\n  apiServer: null,\n  citationService: null,\n  keyboardShortcutService: null,\n  \n  \n  init: async function() {\n    // Initialize services\n    this.citationService = new CitationService();\n    this.keyboardShortcutService = new KeyboardShortcutService();\n    this.apiServer = new ApiServer();\n    \n    // Register context menu\n    this.registerContextMenu();\n    \n    // Register keyboard shortcut if enabled\n    if (Zotero.Prefs.get('extensions.zotero-citation-linker.shortcutEnabled')) {\n      this.keyboardShortcutService.register();\n    }\n    \n    // Start API server\n    const serverStarted = this.apiServer.start();\n    if (!serverStarted) {\n      Zotero.debug('Failed to start Zotero Citation Linker API server');\n    }\n    \n    // Register preference observers\n    this.registerPreferenceObservers();\n    \n    Zotero.debug('Zotero Citation Linker initialized');\n  },\n  \n  shutdown: function() {\n    // Stop API server\n    if (this.apiServer) {\n      this.apiServer.stop();\n    }\n    \n    // Unregister preference observers\n    this.unregisterPreferenceObservers();\n    \n    Zotero.debug('Zotero Citation Linker shutdown');\n  },\n  \n  registerContextMenu: function() {\n    // Implementation from Task 2\n  },\n  \n  registerPreferenceObservers: function() {\n    // Register observers for preference changes\n    Zotero.Prefs.registerObserver('extensions.zotero-citation-linker.port', this.onPortChanged.bind(this));\n    Zotero.Prefs.registerObserver('extensions.zotero-citation-linker.shortcut', this.onShortcutChanged.bind(this));\n    Zotero.Prefs.registerObserver('extensions.zotero-citation-linker.shortcutEnabled', this.onShortcutEnabledChanged.bind(this));\n  },\n  \n  unregisterPreferenceObservers: function() {\n    // Unregister observers\n    Zotero.Prefs.unregisterObserver('extensions.zotero-citation-linker.port');\n    Zotero.Prefs.unregisterObserver('extensions.zotero-citation-linker.shortcut');\n    Zotero.Prefs.unregisterObserver('extensions.zotero-citation-linker.shortcutEnabled');\n  },\n  \n  onPortChanged: function(value) {\n    if (this.apiServer) {\n      this.apiServer.updatePort(value);\n    }\n  },\n  \n  onShortcutChanged: function(value) {\n    if (this.keyboardShortcutService && Zotero.Prefs.get('extensions.zotero-citation-linker.shortcutEnabled')) {\n      this.keyboardShortcutService.updateShortcut(value);\n    }\n  },\n  \n  onShortcutEnabledChanged: function(value) {\n    if (this.keyboardShortcutService) {\n      if (value) {\n        this.keyboardShortcutService.register();\n      } else {\n        this.keyboardShortcutService.unregister();\n      }\n    }\n  },\n  \n  applyPreferences: function() {\n    // Apply any preference changes that require immediate action\n    const port = Zotero.Prefs.get('extensions.zotero-citation-linker.port');\n    if (this.apiServer && this.apiServer.port !== port) {\n      this.apiServer.updatePort(port);\n    }\n    \n    const shortcutEnabled = Zotero.Prefs.get('extensions.zotero-citation-linker.shortcutEnabled');\n    const shortcut = Zotero.Prefs.get('extensions.zotero-citation-linker.shortcut');\n    \n    if (this.keyboardShortcutService) {\n      if (shortcutEnabled) {\n        this.keyboardShortcutService.updateShortcut(shortcut);\n      } else {\n        this.keyboardShortcutService.unregister();\n      }\n    }\n  }\n};\n\n// Bootstrap\nwindow.addEventListener('load', function(e) {\n  ZoteroCitationLinker.init();\n}, false);\n\n// Shutdown\nwindow.addEventListener('unload', function(e) {\n  ZoteroCitationLinker.shutdown();\n}, false);\n```",
+        "testStrategy": "Test the plugin initialization and shutdown by starting and stopping Zotero. Verify all services are properly initialized and cleaned up. Test preference change handling by changing preferences and verifying the changes are applied without requiring a restart. Test error recovery by simulating failures in various components.",
+        "priority": "high",
+        "dependencies": [
+          2,
+          3,
+          5,
+          6,
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement plugin initialization",
+            "description": "Create a function to handle the plugin's initialization process when Zotero starts up",
+            "dependencies": [],
+            "details": "- Define an `init()` function in the main plugin file\n- Register necessary event listeners for Zotero startup\n- Load and parse plugin preferences\n- Initialize required services and components\n- Set up error handling for initialization failures",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Develop preference change handling",
+            "description": "Implement a system to detect and respond to changes in plugin preferences",
+            "dependencies": [
+              1
+            ],
+            "details": "- Create a `handlePreferenceChange()` function\n- Set up observers for preference changes in Zotero\n- Implement logic to update plugin behavior based on changed preferences\n- Ensure proper error handling for invalid preference values\n- Test preference change handling with various scenarios",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Create plugin shutdown procedure",
+            "description": "Develop a function to handle the graceful shutdown of the plugin",
+            "dependencies": [
+              1
+            ],
+            "details": "- Define a `shutdown()` function in the main plugin file\n- Implement logic to stop ongoing processes and release resources\n- Unregister event listeners and observers\n- Save any necessary state information for the next startup\n- Ensure proper error handling during the shutdown process",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Implement error logging and reporting",
+            "description": "Create a system for logging errors and reporting them to the user or developer",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "- Develop an error logging mechanism that works across all lifecycle stages\n- Implement user-friendly error messages for common issues\n- Create a system to report critical errors to the developer (e.g., via email or a logging service)\n- Ensure error logs are accessible for debugging purposes\n- Test error handling in various scenarios (initialization, runtime, shutdown)",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Perform integration testing of lifecycle management",
+            "description": "Conduct thorough testing of the entire plugin lifecycle, including edge cases and error scenarios",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "- Develop a comprehensive test suite covering all lifecycle stages\n- Test plugin behavior during Zotero startup, shutdown, and restarts\n- Simulate various preference change scenarios and verify correct handling\n- Test error handling and recovery in different lifecycle stages\n- Perform stress testing with rapid startup/shutdown cycles\n- Document test results and any discovered issues",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Create Comprehensive Documentation",
+        "description": "Create detailed documentation for the plugin, including installation, usage, and API documentation",
+        "details": "1. Create a comprehensive README.md file with:\n   - Project overview and features\n   - Installation instructions\n   - Usage guide with screenshots\n   - Configuration options\n   - API documentation for client developers\n   - Troubleshooting section\n   - License information\n\n2. Add inline code documentation:\n   - JSDoc comments for all classes and methods\n   - Clear explanations of complex logic\n   - References to Zotero API usage\n\n3. Create a separate API.md file with detailed API documentation:\n   - Endpoint descriptions\n   - Request and response formats with examples\n   - Error codes and handling\n   - Security considerations\n\n4. Add a CONTRIBUTING.md file with guidelines for contributors\n\nExample README.md structure:\n```markdown\n# Zotero Citation Linker Plugin\n\n## Overview\nA Zotero plugin that bridges the gap between Zotero's reference management capabilities and Markdown-based note-taking applications. It provides two core features:\n\n1. Copy fully-formatted, API-linked Markdown citations for items in your Zotero library\n2. A local server to programmatically add web resources to Zotero from external applications\n\n## Installation\n1. Download the latest release from the [Releases page](https://github.com/username/zotero-citation-linker/releases)\n2. In Zotero, go to Tools → Add-ons\n3. Click the gear icon and select \"Install Add-on From File...\"\n4. Select the downloaded .xpi file\n\n## Usage\n\n### Copying Markdown Citations\n1. Select one or more items in your Zotero library\n2. Right-click and select \"Copy Markdown Link\" from the context menu\n3. Alternatively, use the keyboard shortcut (default: Shift+Ctrl+C)\n\n[Screenshot of context menu]\n\n### API Server\nThe plugin starts a local HTTP server when Zotero is launched. External applications can use this API to add new references to Zotero.\n\n## Configuration\n1. Go to Zotero → Preferences → Citation Linker\n2. Configure the following options:\n   - HTTP Server Port (default: 23119)\n   - Enable/disable keyboard shortcut\n   - Customize keyboard shortcut\n\n[Screenshot of preferences panel]\n\n## API Documentation\nSee [API.md](API.md) for detailed API documentation.\n\n## Troubleshooting\n\n### Common Issues\n- **Port conflict**: If another application is using the configured port, change it in the preferences.\n- **Keyboard shortcut not working**: Ensure it doesn't conflict with other Zotero shortcuts.\n\n## License\nThis project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.\n```",
+        "testStrategy": "Review documentation for completeness, accuracy, and clarity. Verify all features are properly documented. Test installation and usage instructions by following them on a clean Zotero installation. Have another developer review the API documentation for completeness and accuracy.",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create User Guide",
+            "description": "Develop a comprehensive user guide for the plugin",
+            "dependencies": [],
+            "details": "Include sections on installation, configuration, basic usage, advanced features, and troubleshooting. Ensure clear step-by-step instructions and screenshots where appropriate.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Develop API Documentation",
+            "description": "Create detailed API documentation for developers",
+            "dependencies": [],
+            "details": "Document all public APIs, including endpoints, parameters, request/response formats, and example usage. Include authentication requirements and error handling.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Write Technical Architecture Document",
+            "description": "Prepare a technical architecture document outlining the plugin's structure",
+            "dependencies": [],
+            "details": "Include system components, data flow diagrams, database schema, and integration points with external systems. Explain design decisions and rationale.",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Create Release Notes Template",
+            "description": "Design a template for future release notes",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "Include sections for new features, bug fixes, known issues, and upgrade instructions. Ensure the template is easily updatable for future releases.",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Package and Test Final Release",
+        "description": "Create the final plugin package and perform comprehensive testing",
+        "details": "1. Create a build script to package the plugin as a .xpi file\n2. Implement version management in the manifest\n3. Perform comprehensive testing:\n   - Test on different operating systems (Windows, macOS, Linux)\n   - Test with different Zotero versions (7.0+)\n   - Test all features and error cases\n   - Test performance and resource usage\n4. Create a release checklist\n5. Prepare release notes\n\nBuild script example:\n```javascript\nconst fs = require('fs');\nconst archiver = require('archiver');\nconst { version } = require('./package.json');\n\n// Create output directory if it doesn't exist\nif (!fs.existsSync('./dist')) {\n  fs.mkdirSync('./dist');\n}\n\n// Create a file to stream archive data to\nconst output = fs.createWriteStream(`./dist/zotero-citation-linker-${version}.xpi`);\nconst archive = archiver('zip', {\n  zlib: { level: 9 } // Sets the compression level\n});\n\n// Listen for all archive data to be written\noutput.on('close', function() {\n  console.log(`Created plugin package: ${archive.pointer()} total bytes`);\n  console.log(`Plugin package saved to ./dist/zotero-citation-linker-${version}.xpi`);\n});\n\n// Handle warnings and errors\narchive.on('warning', function(err) {\n  if (err.code === 'ENOENT') {\n    console.warn(err);\n  } else {\n    throw err;\n  }\n});\n\narchive.on('error', function(err) {\n  throw err;\n});\n\n// Pipe archive data to the file\narchive.pipe(output);\n\n// Add files\narchive.file('manifest.json', { name: 'manifest.json' });\narchive.file('bootstrap.js', { name: 'bootstrap.js' });\narchive.directory('content/', 'content');\narchive.directory('locale/', 'locale');\narchive.directory('skin/', 'skin');\n\n// Finalize the archive\narchive.finalize();\n```\n\nRelease checklist:\n```markdown\n# Release Checklist\n\n## Pre-release\n- [ ] Update version number in package.json and manifest.json\n- [ ] Update CHANGELOG.md with new version and changes\n- [ ] Run all tests and fix any issues\n- [ ] Build the plugin package\n- [ ] Test the built package in a clean Zotero installation\n\n## Testing\n- [ ] Test on Windows\n- [ ] Test on macOS\n- [ ] Test on Linux\n- [ ] Test with Zotero 7.0\n- [ ] Test all features:\n  - [ ] Context menu integration\n  - [ ] Keyboard shortcut\n  - [ ] Citation generation\n  - [ ] API server\n  - [ ] Preferences\n\n## Release\n- [ ] Create GitHub release with release notes\n- [ ] Upload the .xpi file to the release\n- [ ] Update documentation if needed\n- [ ] Announce the release\n```",
+        "testStrategy": "Test the build process to ensure it creates a valid .xpi file. Install the built plugin in a clean Zotero installation and verify all features work correctly. Test on different operating systems and Zotero versions. Perform stress testing with large libraries and many concurrent API requests.",
+        "priority": "medium",
+        "dependencies": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create build and packaging scripts",
+            "description": "Develop scripts to automate the plugin packaging process",
+            "dependencies": [],
+            "details": "Write shell or Python scripts to handle version bumping, file compilation, and creation of the final plugin package",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Design test plan and scenarios",
+            "description": "Create a comprehensive test plan covering various use cases and environments",
+            "dependencies": [],
+            "details": "Define test cases for different operating systems, Obsidian versions, and plugin configurations. Include edge cases and potential conflict scenarios with other plugins",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Implement automated tests",
+            "description": "Develop automated test suites for core plugin functionality",
+            "dependencies": [
+              2
+            ],
+            "details": "Use Jest or another suitable testing framework to create unit tests and integration tests for key plugin features",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 4,
+            "title": "Conduct manual testing",
+            "description": "Perform thorough manual testing across different environments",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Test the packaged plugin on various operating systems, Obsidian versions, and with different configurations. Document any issues or unexpected behaviors",
+            "status": "pending",
+            "testStrategy": ""
+          },
+          {
+            "id": 5,
+            "title": "Prepare release documentation",
+            "description": "Create and update necessary documentation for the release",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "Update the README, write release notes detailing new features and bug fixes, and prepare any necessary user guides or API documentation",
+            "status": "pending",
+            "testStrategy": ""
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-07-03T08:15:25.305Z",
+      "updated": "2025-07-03T08:15:25.305Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
