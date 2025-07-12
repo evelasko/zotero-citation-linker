@@ -7,10 +7,14 @@ zotero-citation-linker-description = Bridge between Zotero and Markdown-based no
 ## Context Menu
 context-menu-copy-markdown = Copy Markdown Link
 context-menu-copy-markdown-tooltip = Copy a formatted Markdown citation with API link
+context-menu-copy-api-url = Copy API URL
+context-menu-copy-api-url-tooltip = Copy the Zotero API URL for this item
 
 ## Notifications
 notification-markdown-copied = Markdown link copied to clipboard
+notification-api-url-copied = API URL copied to clipboard
 notification-markdown-error = Failed to generate Markdown link
+notification-api-url-error = Failed to generate API URL
 notification-server-started = API server started on port { $port }
 notification-server-stopped = API server stopped
 notification-server-error = Failed to start API server: { $error }

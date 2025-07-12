@@ -15,7 +15,8 @@
       "./typings",
       "./node_modules/@types"
     ],
-    "skipDefaultLibCheck": true
+    "skipDefaultLibCheck": true,
+    "skipLibCheck": true
   },
   "include": [
     "*.ts",
