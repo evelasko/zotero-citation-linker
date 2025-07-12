@@ -1,8 +1,7 @@
+/// <reference types="zotero-types/entries/sandbox" />
+
 import { Logger } from 'zotero-plugin/logger'
 const logger = new Logger('ZoteroCitationLinker')
-
-declare const Zotero: any
-declare var Services: any
 
 export async function install() {
   logger.info('Plugin installed')
@@ -16,7 +15,7 @@ export async function startup({ id, version, resourceURI, rootURI = resourceURI.
     Services.scriptloader.loadSubScript(`${rootURI}lib.js`, { Zotero })
 
     // Initialize the plugin (this will load the server endpoint)
-    Zotero.ZoteroCitationLinker.install()
+    ;(Zotero as any).ZoteroCitationLinker.install()
 
     logger.info('Plugin startup completed successfully')
   }
@@ -29,9 +28,9 @@ export async function startup({ id, version, resourceURI, rootURI = resourceURI.
 export function shutdown() {
   logger.info('Shutting down plugin')
 
-  if (Zotero.ZoteroCitationLinker) {
-    Zotero.ZoteroCitationLinker.uninstall()
-    Zotero.ZoteroCitationLinker = undefined
+  if ((Zotero as any).ZoteroCitationLinker) {
+    ;(Zotero as any).ZoteroCitationLinker.uninstall()
+    ;(Zotero as any).ZoteroCitationLinker = undefined
   }
 
   logger.info('Plugin shutdown completed')

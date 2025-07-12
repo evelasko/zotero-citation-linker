@@ -1,12 +1,8 @@
-declare const Zotero: any
-declare const Components: any
-declare const ZoteroPane: any
-// declare const Services: any
+/// <reference types="zotero-types/entries/mainWindow" />
 
 import { Logger } from 'zotero-plugin/logger'
 const logger = new Logger('ZoteroCitationLinker')
 const elogger = new Logger('ZoteroCitationLinker Server Endpoint')
-
 
 const {
   utils: Cu,
@@ -24,8 +20,8 @@ if (Zotero.platformMajorVersion < 102) {
  * 3. Context menu integration
  * 4. Keyboard shortcuts
  */
-Zotero.ZoteroCitationLinker = new class {
-  private notifierID: number
+;(Zotero as any).ZoteroCitationLinker = new class {
+  private notifierID: string
   private apiServer: any = null
   private keyboardShortcutService: any = null
   private contextMenuItems: any[] = []
@@ -149,10 +145,10 @@ Zotero.ZoteroCitationLinker = new class {
       if (!items || items.length === 0) {
         logger.error('No items selected for Markdown link generation')
 
-        new Zotero.Notification('warning', {
-          message: Zotero.getString('error-no-items-selected') || 'No items selected',
-          timeout: 3000,
-        })
+        // new Zotero.Notification('warning', {
+        //   message: Zotero.getString('error-no-items-selected') || 'No items selected',
+        //   timeout: 3000,
+        // })
         return
       }
 
@@ -161,11 +157,11 @@ Zotero.ZoteroCitationLinker = new class {
       if (regularItems.length === 0) {
         logger.error('No regular items selected for citation generation')
 
-        new Zotero.Notification('warning', {
-          message: 'Please select bibliographic items for citation generation',
-          timeout: 3000,
-        })
-        return
+        // new Zotero.Notification('warning', {
+        //   message: 'Please select bibliographic items for citation generation',
+        //   timeout: 3000,
+        // })
+        // return
       }
 
       // Generate and copy the Markdown link
@@ -174,10 +170,10 @@ Zotero.ZoteroCitationLinker = new class {
     } catch (error) {
       logger.error(`Error in handleCopyMarkdownCommand: ${error}`)
 
-      new Zotero.Notification('error', {
-        message: `Failed to copy Markdown link: ${error.message}`,
-        timeout: 5000,
-      })
+      // new Zotero.Notification('error', {
+      //   message: `Failed to copy Markdown link: ${error.message}`,
+      //   timeout: 5000,
+      // })
     }
   }
 
@@ -243,15 +239,16 @@ Zotero.ZoteroCitationLinker = new class {
     elogger.info('Initializing API server endpoints')
          try {
        // Ensure server is running
-       if (!Zotero.Server.port) {
+       if (!(Zotero.Server as any).port) {
          elogger.info('Zotero server not running, attempting to start...')
-         Zotero.Server.init()
+         const server = Zotero.Server as any
+         server.init()
        }
 
        // Register our endpoint
        this.registerProcessUrlEndpoint()
 
-       elogger.info(`API server initialized - endpoints available on port ${Zotero.Server.port}`)
+       elogger.info(`API server initialized - endpoints available on port ${(Zotero.Server as any).port}`)
      } catch (error) {
        elogger.error(`Error initializing API server: ${error}`)
      }
@@ -282,7 +279,7 @@ Zotero.ZoteroCitationLinker = new class {
           elogger.info(`Processing URL: ${url}`)
 
           // Check if library is editable
-          const { library } = Zotero.Server.Connector.getSaveTarget()
+          const { library } = (Zotero.Server as any).Connector.getSaveTarget()
           if (!library.editable) {
             return self._errorResponse(500, 'Target library is not editable')
           }
@@ -313,7 +310,7 @@ Zotero.ZoteroCitationLinker = new class {
           }
 
         } catch (error) {
-          Zotero.logError(`CitationLinker error: ${error.message}`)
+          Zotero.logError(new Error(`CitationLinker error: ${error.message}`))
           Zotero.logError(error)
           return self._errorResponse(500, `Internal server error: ${error.message}`)
         }
@@ -395,19 +392,19 @@ Zotero.ZoteroCitationLinker = new class {
       elogger.info(`Generated Markdown link: ${markdownLink}`)
 
       // Show success notification
-      new Zotero.Notification('success', {
-        message: 'Markdown link copied to clipboard',
-        timeout: 2500,
-      })
+      // new Zotero.Notification('success', {
+      //   message: 'Markdown link copied to clipboard',
+      //   timeout: 2500,
+      // })
 
       return true
     } catch (error) {
       elogger.error(`Error generating Markdown link: ${error}`)
 
-      new Zotero.Notification('error', {
-        message: `Failed to generate Markdown link: ${error.message}`,
-        timeout: 5000,
-      })
+      // new Zotero.Notification('error', {
+      //   message: `Failed to generate Markdown link: ${error.message}`,
+      //   timeout: 5000,
+      // })
 
       return false
     }
@@ -541,7 +538,7 @@ Zotero.ZoteroCitationLinker = new class {
 
       return {
         success: true,
-        items: items,
+        items: items as any[],
         translator: translator.label,
       }
 
@@ -579,12 +576,12 @@ Zotero.ZoteroCitationLinker = new class {
       }
 
       // Use the connector's saveItems endpoint internally
-      const saveItemsEndpoint = new Zotero.Server.Connector.SaveItems()
+      const saveItemsEndpoint = new (Zotero.Server as any).Connector.SaveItems()
       const result = await saveItemsEndpoint.init(saveRequestData)
 
       if (result[0] === 201) {
         // Get the session to retrieve saved items
-        const session = Zotero.Server.Connector.SessionManager.get(sessionID)
+        const session = (Zotero.Server as any).Connector.SessionManager.get(sessionID)
         if (session) {
           const savedItems = []
           for (let i = 0; i < items.length; i++) {
@@ -625,7 +622,7 @@ Zotero.ZoteroCitationLinker = new class {
       const metadata = this._extractBasicMetadata(doc, url)
 
       // Create webpage item
-      const { library, collection } = Zotero.Server.Connector.getSaveTarget()
+      const { library, collection } = (Zotero.Server as any).Connector.getSaveTarget()
 
       const item = new Zotero.Item('webpage')
       item.libraryID = library.libraryID
@@ -649,11 +646,8 @@ Zotero.ZoteroCitationLinker = new class {
 
       // Convert to JSON format
       const jsonItem = item.toJSON()
-      jsonItem.key = item.key
-      jsonItem.version = item.version
-      jsonItem.itemID = item.id
 
-      return { success: true, item: jsonItem }
+      return { success: true, item: jsonItem, itemKey: item.key, itemVersion: item.version, itemID: item.id }
 
     } catch (error) {
       return { success: false, error: error.message }
@@ -681,7 +675,7 @@ Zotero.ZoteroCitationLinker = new class {
 
                     // Create a DOM document from the response
        const parser = Components.classes['@mozilla.org/xmlextras/domparser;1']
-         .createInstance(Components.interfaces.nsIDOMParser)
+         .createInstance((Components.interfaces as any).nsIDOMParser)
        const doc = parser.parseFromString(response.responseText, 'text/html')
 
        // Set base URI for relative URLs

@@ -10,18 +10,17 @@
     "preserveConstEnums": false,
     "sourceMap": false,
     "downlevelIteration": true,
-    "lib": [ "es2019", "dom", "ES2021.WeakRef" ],
+    "lib": ["es2019", "dom", "ES2021.WeakRef"],
     "typeRoots": [
       "./typings",
       "./node_modules/@types"
     ],
-    "skipDefaultLibCheck": true,
+    "skipDefaultLibCheck": true
   },
   "include": [
     "*.ts",
     "src/**/*",
-    "locale/**/*",
-    "node_modules/zotero-types"
+    "locale/**/*"
   ],
   "exclude": [
     "node_modules",
