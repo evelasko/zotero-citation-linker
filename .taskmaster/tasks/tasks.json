@@ -9,7 +9,7 @@
         "testStrategy": "Verify the project structure builds correctly and can be loaded as a development plugin in Zotero 7. Test the build process to ensure it produces a valid .xpi file that can be installed in Zotero.",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -17,7 +17,7 @@
             "description": "Set up the initial folder structure for the WebExtension project",
             "dependencies": [],
             "details": "Create the following directories: src/, dist/, public/, and config/. Within src/, create subdirectories for components/, styles/, and utils/.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -28,7 +28,7 @@
               1
             ],
             "details": "Run 'npm init -y' to create package.json. Install dev dependencies: webpack, webpack-cli, typescript, ts-loader, @types/webextension-polyfill, web-ext, eslint, prettier. Install runtime dependency: webextension-polyfill.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -39,7 +39,7 @@
               2
             ],
             "details": "Create tsconfig.json with appropriate compiler options. Set up .eslintrc.js with rules for TypeScript. Create .prettierrc for code formatting rules.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -50,7 +50,7 @@
               1
             ],
             "details": "Create manifest.json in the public/ directory with extension metadata. Create HTML files for popup, options, and background pages in public/.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           },
           {
@@ -63,7 +63,7 @@
               4
             ],
             "details": "Create webpack.config.js in the config/ directory. Set up entry points, output, and loaders for TypeScript. Add npm scripts in package.json for 'build', 'watch', and 'start' using webpack and web-ext.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": ""
           }
         ]
@@ -699,7 +699,7 @@
     ],
     "metadata": {
       "created": "2025-07-03T08:15:25.305Z",
-      "updated": "2025-07-03T08:15:25.305Z",
+      "updated": "2025-07-03T11:43:40.157Z",
       "description": "Tasks for master context"
     }
   }

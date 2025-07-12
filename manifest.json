@@ -1,0 +1,15 @@
+{
+    "manifest_version": 2,
+    "name": "Zotero Citation Linker",
+    "version": "0.1.0",
+    "description": "A Zotero plugin that bridges the gap between Zotero's reference management capabilities and Markdown-based note-taking applications. Provides context menu integration for copying Markdown citations and a local API server for external applications.",
+    "homepage_url": "https://github.com/evelasko/zotero-citation-linker",
+    "applications": {
+        "zotero": {
+            "id": "zotero-citation-linker@misfitcoders.com",
+            "update_url": "https://github.com/username/zotero-citation-linker/releases/download/release/update.rdf",
+            "strict_min_version": "7.0",
+            "strict_max_version": "7.0.*"
+        }
+    }
+}

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "importHelpers": true,
+    "target": "es2017",
+    "disableSizeLimit": true,
+    "module": "commonjs",
+    "noImplicitAny": false,
+    "esModuleInterop": true,
+    "removeComments": false,
+    "preserveConstEnums": false,
+    "sourceMap": false,
+    "downlevelIteration": true,
+    "lib": [ "es2019", "dom", "ES2021.WeakRef" ],
+    "typeRoots": [
+      "./typings",
+      "./node_modules/@types"
+    ],
+    "skipDefaultLibCheck": true,
+  },
+  "include": [
+    "*.ts",
+    "src/**/*",
+    "locale/**/*",
+    "node_modules/zotero-types"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/*.spec.ts",
+    "build",
+    "zotero-*"
+  ]
+} 
