@@ -54,20 +54,29 @@ if (Zotero.platformMajorVersion < 102) {
    * Install and initialize the plugin
    */
   install() {
-    logger.info('Installing plugin services with toolkit')
+    logger.info('Installing Zotero Citation Linker plugin with toolkit integration')
 
-    // TODO: Register localization files for proper i18n support
-    // This would enable the getLocalizedString method to work with Zotero.getString()
+    try {
+      // **PHASE 4: Initialize preferences during installation**
+      this.initializePreferences()
 
-    // Register for item notifications
-    this.notifierID = Zotero.Notifier.registerObserver(this, ['item'])
+      // Initialize enhanced context menu with toolkit
+      this.initializeContextMenu()
 
-    // Initialize services using toolkit
-    this.initializeContextMenu()
-    this.initializeKeyboardShortcuts()
-    this.initializeApiServer()
+      // Initialize keyboard shortcuts
+      this.initializeKeyboardShortcuts()
 
-    logger.info('Plugin services installed successfully')
+      // Initialize API server
+      this.initializeApiServer()
+
+      // Register notifier for future features
+      this.notifierID = Zotero.Notifier.registerObserver(this, ['item'])
+
+      logger.info('Plugin installation completed successfully')
+    } catch (error) {
+      logger.error(`Error during plugin installation: ${error}`)
+      throw error
+    }
   }
 
   /**
@@ -350,22 +359,16 @@ if (Zotero.platformMajorVersion < 102) {
           const translationResult = await self._attemptTranslation(url)
 
           if (translationResult.success) {
-            // Translation successful - save the items
-            elogger.info(`Translation successful - saving ${translationResult.items.length} items`)
-            const saveResult = await self._saveTranslatedItems(url, translationResult.items)
-            if (saveResult.success) {
-              elogger.info('Items saved successfully')
-              return self._successResponse(saveResult.items, 'translation', translationResult.translator)
-            } else {
-              return self._errorResponse(500, `Failed to save translated items: ${saveResult.error}`)
-            }
+            // Translation successful - items are already saved by the translation system
+            elogger.info(`Translation successful - using ${translationResult.items.length} already-saved items`)
+            return await self._successResponse(translationResult.items, 'translation', translationResult.translator)
           } else {
             // Translation failed - fall back to webpage save
             elogger.info(`Translation failed (${translationResult.reason}), falling back to webpage save`)
 
             const webpageResult = await self._saveAsWebpage(url)
             if (webpageResult.success) {
-              return self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator')
+              return await self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator')
             } else {
               return self._errorResponse(500, `Failed to save as webpage: ${webpageResult.error}`)
             }
@@ -401,11 +404,13 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Generate and copy Markdown citation to clipboard
-   * Enhanced with proper localization and better user feedback
+   * **PHASE 4: Enhanced with professional CSL-based citation generation**
    * @param items - Array of Zotero items
+   * @param format - Citation format ('markdown', 'plain', 'html')
+   * @param citationStyle - Optional CSL style override
    */
-  async generateAndCopyMarkdownLink(items: any[]) {
-    elogger.info(`Generating Markdown link for ${items.length} item(s)`)
+  async generateAndCopyMarkdownLink(items: any[], format: string = 'markdown', citationStyle?: string) {
+    elogger.info(`Generating ${format} citation for ${items.length} item(s)`)
 
     if (!items || items.length === 0) {
       elogger.error('No items provided')
@@ -413,61 +418,72 @@ if (Zotero.platformMajorVersion < 102) {
     }
 
     try {
-      // Placeholder implementation - will be fully implemented in Task 4
-      // For now, generate a simple citation with the first item
-      const firstItem = items[0]
-      const title = firstItem.getField('title') || 'Untitled'
-      const creators = firstItem.getCreators()
-      const year = firstItem.getField('date') ? new Date(firstItem.getField('date')).getFullYear() : ''
+      // **PHASE 4: Professional Citation Generation**
+      const citationResults = await this._generateProfessionalCitations(items, citationStyle)
 
-      // Create a simple author-year citation
-      let citation = ''
-      if (creators.length > 0) {
-        const author = creators[0].lastName || creators[0].name
-        citation = year ? `${author} (${year})` : author
-      } else {
-        citation = year ? `(${year})` : title
+      if (!citationResults.success) {
+        throw new Error('Citation generation failed')
       }
 
-      // Generate API URL using Zotero.Users.getCurrentUserID()
-      const library = firstItem.library
-      const itemKey = firstItem.key
-      let apiUrl: string
+      let finalOutput: string
 
-      // Check if this is a group library
-      if ((library as any).type === 'group') {
-        apiUrl = `https://api.zotero.org/groups/${(library as any).id}/items/${itemKey}`
+      if (items.length === 1) {
+        // Single item - create formatted link
+        const item = items[0]
+        const citation = citationResults.citations[0]
+        const apiUrl = this._generateApiUrl(item)
+
+        switch (format) {
+          case 'markdown':
+            finalOutput = `[${citation}](${apiUrl})`
+            break
+          case 'html':
+            finalOutput = `<a href="${apiUrl}">${citation}</a>`
+            break
+          case 'plain':
+          default:
+            finalOutput = `${citation} - ${apiUrl}`
+            break
+        }
       } else {
-        // For user libraries, use Zotero.Users.getCurrentUserID()
-        const userID = Zotero.Users.getCurrentUserID()
-        if (userID) {
-          apiUrl = `https://api.zotero.org/users/${userID}/items/${itemKey}`
+        // Multiple items - create formatted list
+        const formattedItems = items.map((item, index) => {
+          const citation = citationResults.citations[index]
+          const apiUrl = this._generateApiUrl(item)
+
+          switch (format) {
+            case 'markdown':
+              return `- [${citation}](${apiUrl})`
+            case 'html':
+              return `<li><a href="${apiUrl}">${citation}</a></li>`
+            case 'plain':
+            default:
+              return `${citation} - ${apiUrl}`
+          }
+        })
+
+        if (format === 'html') {
+          finalOutput = `<ul>\n${formattedItems.join('\n')}\n</ul>`
         } else {
-          // Fallback if no user ID available (offline mode)
-          apiUrl = `zotero://select/library/items/${itemKey}`
+          finalOutput = formattedItems.join('\n')
         }
       }
-
-      // Create the Markdown link
-      const markdownLink = `[${citation}](${apiUrl})`
 
       // Copy to clipboard
       const clipboardHelper = Components.classes['@mozilla.org/widget/clipboardhelper;1']
         .getService(Components.interfaces.nsIClipboardHelper)
-      clipboardHelper.copyString(markdownLink)
+      clipboardHelper.copyString(finalOutput)
 
-      elogger.info(`Generated Markdown link: ${markdownLink}`)
+      elogger.info(`Generated ${format} citation: ${finalOutput.substring(0, 200)}...`)
 
-      // Enhanced user feedback with fallback message
-      ztoolkit.log('Success: Markdown link copied to clipboard')
+      // Enhanced user feedback
+      const itemText = items.length === 1 ? 'citation' : `${items.length} citations`
+      ztoolkit.log(`Success: ${format} ${itemText} copied to clipboard`)
 
       return true
     } catch (error) {
-      elogger.error(`Error generating Markdown link: ${error}`)
-
-      // Enhanced error feedback with fallback message
-      ztoolkit.log(`Error: Failed to generate Markdown link: ${error.message}`)
-
+      elogger.error(`Error generating ${format} citation: ${error}`)
+      ztoolkit.log(`Error: Failed to generate ${format} citation: ${error.message}`)
       return false
     }
   }
@@ -491,13 +507,135 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Get default preferences for the plugin
+   * **PHASE 4: Enhanced with comprehensive preference management**
    */
   getDefaultPreferences() {
     return {
+      // Server Configuration
       'extensions.zotero-citation-linker.port': 23119,
+      'extensions.zotero-citation-linker.serverEnabled': true,
+
+      // Keyboard Shortcuts
       'extensions.zotero-citation-linker.shortcutEnabled': true,
       'extensions.zotero-citation-linker.shortcut': 'shift+ctrl+c',
+
+      // Citation Generation
+      'extensions.zotero-citation-linker.defaultCitationStyle': 'chicago-note-bibliography',
+      'extensions.zotero-citation-linker.defaultOutputFormat': 'markdown',
+      'extensions.zotero-citation-linker.includeApiUrls': true,
+      'extensions.zotero-citation-linker.fallbackToBasicCitation': true,
+
+      // User Interface
+      'extensions.zotero-citation-linker.showSuccessNotifications': true,
+      'extensions.zotero-citation-linker.showErrorNotifications': true,
+      'extensions.zotero-citation-linker.contextMenuEnabled': true,
+
+      // Development and Debugging
       'extensions.zotero-citation-linker.debug': false,
+      'extensions.zotero-citation-linker.logLevel': 'info', // 'debug', 'info', 'warn', 'error'
+
+      // API Server Enhancement
+      'extensions.zotero-citation-linker.serverIncludeCitations': true,
+      'extensions.zotero-citation-linker.serverTimeout': 30000,
+    }
+  }
+
+  /**
+   * Initialize default preferences
+   * **PHASE 4: Robust preference initialization with validation**
+   */
+  private initializePreferences() {
+    elogger.info('Initializing plugin preferences')
+
+    try {
+      const defaults = this.getDefaultPreferences()
+
+      // Set default preferences if they don't exist
+      for (const [key, value] of Object.entries(defaults)) {
+        const currentValue = Zotero.Prefs.get(key, null)
+        if (currentValue === null || currentValue === undefined) {
+          Zotero.Prefs.set(key, value)
+          elogger.info(`Set default preference: ${key} = ${value}`)
+        }
+      }
+
+      // Validate critical preferences
+      this.validatePreferences()
+
+      elogger.info('Plugin preferences initialized successfully')
+    } catch (error) {
+      elogger.error(`Error initializing preferences: ${error}`)
+    }
+  }
+
+  /**
+   * Validate preferences for consistency and security
+   * **PHASE 4: Preference validation and sanitization**
+   */
+  private validatePreferences() {
+    try {
+      // Validate port number
+      const port = Zotero.Prefs.get('extensions.zotero-citation-linker.port')
+      if (typeof port !== 'number' || port < 1024 || port > 65535) {
+        elogger.info(`Invalid port ${port}, resetting to default`)
+        Zotero.Prefs.set('extensions.zotero-citation-linker.port', 23119)
+      }
+
+      // Validate citation style
+      const style = Zotero.Prefs.get('extensions.zotero-citation-linker.defaultCitationStyle')
+      if (typeof style !== 'string' || style.length === 0) {
+        elogger.info(`Invalid citation style ${style}, resetting to default`)
+        Zotero.Prefs.set('extensions.zotero-citation-linker.defaultCitationStyle', 'chicago-note-bibliography')
+      }
+
+      // Validate output format
+      const format = Zotero.Prefs.get('extensions.zotero-citation-linker.defaultOutputFormat')
+      const validFormats = ['markdown', 'plain', 'html']
+      if (typeof format !== 'string' || !validFormats.includes(format)) {
+        elogger.info(`Invalid output format ${format}, resetting to default`)
+        Zotero.Prefs.set('extensions.zotero-citation-linker.defaultOutputFormat', 'markdown')
+      }
+
+      // Validate log level
+      const logLevel = Zotero.Prefs.get('extensions.zotero-citation-linker.logLevel')
+      const validLogLevels = ['debug', 'info', 'warn', 'error']
+      if (typeof logLevel !== 'string' || !validLogLevels.includes(logLevel)) {
+        elogger.info(`Invalid log level ${logLevel}, resetting to default`)
+        Zotero.Prefs.set('extensions.zotero-citation-linker.logLevel', 'info')
+      }
+
+      // Validate timeout
+      const timeout = Zotero.Prefs.get('extensions.zotero-citation-linker.serverTimeout')
+      if (typeof timeout !== 'number' || timeout < 5000 || timeout > 120000) {
+        elogger.info(`Invalid timeout ${timeout}, resetting to default`)
+        Zotero.Prefs.set('extensions.zotero-citation-linker.serverTimeout', 30000)
+      }
+
+    } catch (error) {
+      elogger.error(`Error validating preferences: ${error}`)
+    }
+  }
+
+  /**
+   * Get preference with fallback to default
+   * **PHASE 4: Safe preference getter with type validation**
+   */
+  private getPreference(key: string, defaultValue: any): any {
+    try {
+      const fullKey = key.startsWith('extensions.') ? key : `extensions.zotero-citation-linker.${key}`
+
+      const value = Zotero.Prefs.get(fullKey)
+
+      // Type validation
+      if (value !== undefined && value !== null && typeof value === typeof defaultValue) {
+        return value
+      } else {
+        elogger.info(`Type mismatch for preference ${fullKey}, using default`)
+        return defaultValue
+      }
+    } catch (error) {
+      elogger.error(`Error getting preference ${key}: ${error}`)
+      return defaultValue
     }
   }
 
@@ -536,73 +674,81 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Attempt to translate the URL using Zotero's translation system
+   * **PHASE 4 FIX: Enhanced translation detection and processing**
    */
   private async _attemptTranslation(url: string) {
     try {
-      // Load the webpage document
-      const doc = await this._loadDocument(url)
-      elogger.info(`Loaded document for translation:\n ${JSON.stringify(doc).slice(0, 500)}...`)
+      elogger.info(`Starting translation attempt for URL: ${url}`)
 
-      // Set up translation
+      // Load the webpage document
+      let doc = await this._loadDocument(url)
+      elogger.info('Document loaded successfully for translation')
+
+      // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
+      try {
+        doc = Zotero.HTTP.wrapDocument(doc, url)
+        elogger.info(`Document wrapped successfully with Zotero.HTTP.wrapDocument for: ${url}`)
+        elogger.info(`Document location href: ${doc.location?.href || 'undefined'}`)
+      } catch (err) {
+        elogger.error(`Failed to wrap document with Zotero.HTTP.wrapDocument: ${err}`)
+        elogger.info('Continuing with translation using unwrapped document')
+      }
+
+      // **FIX: Enhanced translation setup with proper error handling**
       const translation = new Zotero.Translate.Web()
+
+      // Set the document (URL is already embedded via wrapDocument)
       translation.setDocument(doc)
+
+      elogger.info('Translation object created and configured')
 
       // Get available translators
       const translators = await translation.getTranslators()
+      elogger.info(`Found ${translators.length} translators for this URL`)
 
       if (translators.length === 0) {
         elogger.info('No translators found for this URL')
         return { success: false, reason: 'No translators found for this URL' }
       }
 
+      // Log available translators for debugging
+      translators.forEach((translator, index) => {
+        elogger.info(`Translator ${index + 1}: ${translator.label} (priority: ${translator.priority})`)
+      })
+
       // Use the first (highest priority) translator
       const translator = translators[0]
       translation.setTranslator(translator)
-      elogger.info(`Using translator: ${translator.label}`)
+      elogger.info(`Using translator: ${translator.label} with priority ${translator.priority}`)
 
-      // Perform translation with timeout
-      const items = await Promise.race([
-        new Promise((resolve, reject) => {
-          const itemArray: any[] = []
+      // **FIX: Direct translation execution using Zotero's standard approach**
+      const items = await translation.translate()
 
-          translation.setHandler('itemDone', (obj: any, dbItem: any) => {
-            // Convert Zotero item to JSON format
-            const jsonItem = dbItem.toJSON()
-            jsonItem.key = dbItem.key
-            jsonItem.version = dbItem.version
-            jsonItem.itemID = dbItem.id
-            itemArray.push(jsonItem)
-            elogger.info(`Received item: ${JSON.stringify(jsonItem).slice(0, 500)}...`)
-          })
+      elogger.info(`Translation completed: ${items ? items.length : 0} items created`)
 
-          translation.setHandler('done', () => {
-            elogger.info(`Translation completed with ${itemArray.length} items`)
-            resolve(itemArray)
-          })
+      // Convert items to proper format if they exist
+      if (items && items.length > 0) {
+        const formattedItems = items.map((item: any) => {
+          const jsonItem = item.toJSON()
+          jsonItem.key = item.key
+          jsonItem.version = item.version
+          jsonItem.itemID = item.id
 
-          translation.setHandler('error', (translate: any, error: any) => {
-            elogger.info(`Translation error: ${error.message || error}`)
-            reject(new Error(`Translation error: ${error.message || error}`))
-          })
+          elogger.info(`Formatted item: ${jsonItem.title || 'No title'} (${jsonItem.itemType})`)
+          return jsonItem
+        })
 
-          // Start translation
-          translation.translate()
-        }),
-        Zotero.Promise.delay(30000).then(() => {
-          throw new Error('Translation timeout after 30 seconds')
-        }),
-      ])
-
-      if ((items as any[]).length === 0) {
-        elogger.info('Translation completed but produced no items')
-        return { success: false, reason: 'Translation completed but produced no items' }
+        elogger.info(`Translation successful: ${formattedItems.length} items formatted`)
+        return {
+          success: true,
+          items: formattedItems,
+          translator: translator.label,
+        }
       }
 
-      return {
-        success: true,
-        items: items as any[],
-        translator: translator.label,
-      }
+      // **FIX: If no items produced, return failure**
+      elogger.info('Translation completed but produced no items')
+      return { success: false, reason: 'Translation completed but produced no items' }
 
     } catch (error) {
       elogger.error(`Translation error: ${error.message}`)
@@ -718,15 +864,21 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Load a document from URL
+   * **PHASE 4 FIX: Corrected DOM parsing for Zotero 7 compatibility**
    */
   private async _loadDocument(url: string) {
     try {
+      elogger.info(`Loading document from URL: ${url}`)
+
       // Use Zotero's HTTP system with proper headers
       const options = {
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; Zotero Citation Linker)',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
         },
-        timeout: 30000,
+        timeout: this.getPreference('serverTimeout', 30000),
+        followRedirects: true,
       }
 
       const response = await Zotero.HTTP.request('GET', url, options)
@@ -735,52 +887,160 @@ if (Zotero.platformMajorVersion < 102) {
         throw new Error('Empty response from URL')
       }
 
-                    // Create a DOM document from the response
-       const parser = Components.classes['@mozilla.org/xmlextras/domparser;1']
-         .createInstance((Components.interfaces as any).nsIDOMParser)
-       const doc = parser.parseFromString(response.responseText, 'text/html')
+      elogger.info(`Received response: ${response.status} ${response.statusText}, content length: ${response.responseText.length}`)
 
-       // Set base URI for relative URLs
-       const base = doc.createElement('base')
-       base.href = url
-       doc.head.insertBefore(base, doc.head.firstChild)
+      // **FIX: Use proper DOM document creation for Zotero 7**
+      let doc: any
+      try {
+        // Method 1: Try using DOMParser from global context
+        const globalWindow = ztoolkit.getGlobal('window') || globalThis
+        if (globalWindow && globalWindow.DOMParser) {
+          const parser = new globalWindow.DOMParser()
+          doc = parser.parseFromString(response.responseText, 'text/html')
+          elogger.info('Successfully used global DOMParser')
+        } else {
+          throw new Error('Global DOMParser not available')
+        }
+      } catch (e1) {
+        try {
+          // Method 2: Try using document.implementation
+          const mainWindow = ztoolkit.getGlobal('window') || Services.wm.getMostRecentWindow('navigator:browser')
+          if (mainWindow && mainWindow.document) {
+            doc = mainWindow.document.implementation.createHTMLDocument('temp')
+            doc.documentElement.innerHTML = response.responseText
+            elogger.info('Successfully used document.implementation.createHTMLDocument')
+          } else {
+            throw new Error('Main window document not available')
+          }
+        } catch (e2) {
+          try {
+            // Method 3: Use Services to create document
+            const docShell = Services.appShell.createWindowlessBrowser(false)
+            const domWindow = docShell.document.defaultView
+            doc = domWindow.document.implementation.createHTMLDocument('temp')
+            doc.documentElement.innerHTML = response.responseText
+            elogger.info('Successfully used windowless browser')
+          } catch (e3) {
+            // Method 4: Create minimal DOM structure as ultimate fallback
+            try {
+              elogger.info('Attempting to create minimal DOM structure as fallback')
+              // Create a minimal document structure
+              doc = {
+                createElement: (tag: string) => ({ tagName: tag, setAttribute: () => {}, href: '', textContent: '' }),
+                querySelector: (selector: string) => {
+                  // Basic selector simulation for metadata extraction
+                  if (selector === 'title') {
+                    const titleMatch = response.responseText.match(/<title[^>]*>([^<]+)<\/title>/i)
+                    return titleMatch ? { textContent: titleMatch[1].trim() } : null
+                  }
+                  if (selector.includes('meta')) {
+                    const metaPattern = new RegExp(`<meta[^>]*${selector.replace(/[[\]"']/g, '')}[^>]*>`, 'i')
+                    const match = response.responseText.match(metaPattern)
+                    if (match) {
+                      const contentMatch = match[0].match(/content=["']([^"']+)["']/i)
+                      return contentMatch ? { getAttribute: () => contentMatch[1] } : null
+                    }
+                  }
+                  return null
+                },
+                title: (() => {
+                  const titleMatch = response.responseText.match(/<title[^>]*>([^<]+)<\/title>/i)
+                  return titleMatch ? titleMatch[1].trim() : 'Unknown Title'
+                })(),
+                head: null,
+                documentElement: { innerHTML: '' },
+              }
+              elogger.info('Successfully created minimal DOM structure')
+            } catch (e4) {
+              throw new Error(`All DOM parsing methods failed: ${e1.message} / ${e2.message} / ${e3.message} / ${e4.message}`)
+            }
+          }
+        }
+      }
 
-       return doc
+      if (!doc) {
+        throw new Error('Failed to create document')
+      }
+
+      // Set base URI for relative URLs
+      try {
+        const base = doc.createElement('base')
+        base.href = url
+        if (doc.head) {
+          doc.head.insertBefore(base, doc.head.firstChild)
+        }
+      } catch (baseError) {
+        elogger.info(`Warning: Could not set base URI: ${baseError.message}`)
+      }
+
+      elogger.info(`Successfully parsed document with title: ${doc.title || 'No title'}`)
+      return doc
 
     } catch (error) {
+      elogger.error(`Failed to load document from ${url}: ${error.message}`)
       throw new Error(`Failed to load document from ${url}: ${error.message}`)
     }
   }
 
   /**
    * Extract basic metadata from a document
+   * **PHASE 4 FIX: Enhanced for academic sites like IEEE**
    */
   private _extractBasicMetadata(doc: any, url: string) {
     const metadata: any = {}
 
-    // Extract title
-    metadata.title = doc.querySelector('title')?.textContent?.trim() ||
-                    doc.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim() ||
-                    doc.querySelector('meta[name="twitter:title"]')?.getAttribute('content')?.trim() ||
-                    url
+    try {
+      // Enhanced title extraction for academic sites
+      metadata.title = doc.querySelector('title')?.textContent?.trim() ||
+                      doc.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim() ||
+                      doc.querySelector('meta[name="twitter:title"]')?.getAttribute('content')?.trim() ||
+                      doc.querySelector('meta[name="citation_title"]')?.getAttribute('content')?.trim() ||
+                      doc.querySelector('h1')?.textContent?.trim() ||
+                      url
 
-    // Extract site name
-    const urlObj = Components.classes['@mozilla.org/network/io-service;1']
-      .getService(Components.interfaces.nsIIOService)
-      .newURI(url)
-    metadata.websiteTitle = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content')?.trim() ||
-                           doc.querySelector('meta[name="application-name"]')?.getAttribute('content')?.trim() ||
-                           urlObj.host
+      // Enhanced site name extraction
+      const urlObj = Services.io.newURI(url)
+      metadata.websiteTitle = doc.querySelector('meta[property="og:site_name"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('meta[name="application-name"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('meta[name="citation_publisher"]')?.getAttribute('content')?.trim() ||
+                             urlObj.host
 
-    // Extract description
-    metadata.abstractNote = doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() ||
-                           doc.querySelector('meta[property="og:description"]')?.getAttribute('content')?.trim() ||
-                           doc.querySelector('meta[name="twitter:description"]')?.getAttribute('content')?.trim() ||
-                           ''
+      // Enhanced description extraction for academic content
+      metadata.abstractNote = doc.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('meta[property="og:description"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('meta[name="twitter:description"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('meta[name="citation_abstract"]')?.getAttribute('content')?.trim() ||
+                             doc.querySelector('.abstract')?.textContent?.trim() ||
+                             doc.querySelector('[class*="abstract"]')?.textContent?.trim() ||
+                             ''
 
-    // Limit description length
-    if (metadata.abstractNote.length > 500) {
-      metadata.abstractNote = metadata.abstractNote.substring(0, 497) + '...'
+      // Additional academic metadata
+      if (doc.querySelector('meta[name="citation_author"]')) {
+        metadata.author = doc.querySelector('meta[name="citation_author"]')?.getAttribute('content')?.trim()
+      }
+
+      if (doc.querySelector('meta[name="citation_date"]') || doc.querySelector('meta[name="citation_publication_date"]')) {
+        metadata.date = doc.querySelector('meta[name="citation_date"]')?.getAttribute('content')?.trim() ||
+                       doc.querySelector('meta[name="citation_publication_date"]')?.getAttribute('content')?.trim()
+      }
+
+      if (doc.querySelector('meta[name="citation_doi"]')) {
+        metadata.DOI = doc.querySelector('meta[name="citation_doi"]')?.getAttribute('content')?.trim()
+      }
+
+      // Limit description length
+      if (metadata.abstractNote && metadata.abstractNote.length > 500) {
+        metadata.abstractNote = metadata.abstractNote.substring(0, 497) + '...'
+      }
+
+      elogger.info(`Extracted metadata - Title: "${metadata.title}", Site: "${metadata.websiteTitle}", DOI: "${metadata.DOI || 'None'}"`)
+
+    } catch (error) {
+      elogger.error(`Error extracting metadata: ${error.message}`)
+      // Fallback metadata
+      metadata.title = url
+      metadata.websiteTitle = 'Unknown Site'
+      metadata.abstractNote = ''
     }
 
     return metadata
@@ -788,18 +1048,86 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Generate success response
+   * **PHASE 4: Enhanced with citation data and comprehensive metadata**
    */
-  private _successResponse(items: any[], method: string, translator: string) {
-    const response = {
-      status: 'success',
-      method: method,
-      translator: translator,
-      itemCount: items.length,
-      items: items,
-    }
+  private async _successResponse(items: any[], method: string, translator: string) {
+    try {
+      // **PHASE 4: Generate citations for all items in server response**
+      const enrichedItems = await Promise.all(items.map(async (item, index) => {
+        try {
+          // Create a mock Zotero item for citation generation if needed
+          let zoteroItem = item
+          if (!zoteroItem.getField) {
+            // Convert JSON item back to Zotero item for citation generation
+            const tempItem = await Zotero.Items.getAsync(item.itemID || item.id)
+            if (tempItem) {
+              zoteroItem = tempItem
+            }
+          }
 
-    elogger.info(`Successfully processed URL using ${method} (${translator})`)
-    return [200, 'application/json', JSON.stringify(response)]
+          // Generate citation using our enhanced citation system
+          const citationResults = await this._generateProfessionalCitations([zoteroItem])
+          const citation = citationResults.success ? citationResults.citations[0] : null
+
+          // Generate API URL
+          const apiUrl = this._generateApiUrl(zoteroItem)
+
+          // Create enriched item with citation data
+          return {
+            ...item,
+            _meta: {
+              index: index,
+              citation: citation,
+              apiUrl: apiUrl,
+              citationStyle: citationResults.style || 'default',
+              citationFormat: citationResults.format || 'unknown',
+            },
+          }
+        } catch (error) {
+          elogger.error(`Error enriching item ${index}: ${error}`)
+          return {
+            ...item,
+            _meta: {
+              index: index,
+              citation: null,
+              apiUrl: item.key ? `zotero://select/library/items/${item.key}` : null,
+              error: `Citation generation failed: ${error.message}`,
+            },
+          }
+        }
+      }))
+
+      const response = {
+        status: 'success',
+        method: method,
+        translator: translator,
+        itemCount: items.length,
+        timestamp: new Date().toISOString(),
+        items: enrichedItems,
+        _links: {
+          documentation: 'https://github.com/your-repo/zotero-citation-linker',
+          zoteroApi: 'https://api.zotero.org/',
+        },
+      }
+
+      elogger.info(`Successfully processed URL using ${method} (${translator}) with ${items.length} items enriched with citations`)
+      return [200, 'application/json', JSON.stringify(response, null, 2)]
+
+    } catch (error) {
+      elogger.error(`Error generating enhanced success response: ${error}`)
+
+      // Fallback to basic response
+      const basicResponse = {
+        status: 'success',
+        method: method,
+        translator: translator,
+        itemCount: items.length,
+        items: items,
+        warning: `Citation enhancement failed: ${error.message}`,
+      }
+
+      return [200, 'application/json', JSON.stringify(basicResponse)]
+    }
   }
 
   /**
@@ -815,5 +1143,150 @@ if (Zotero.platformMajorVersion < 102) {
     elogger.error(`Error ${statusCode}: ${message}`)
 
     return [statusCode, 'application/json', JSON.stringify(response)]
+  }
+
+  // =================== PHASE 4: ENHANCED CITATION GENERATION METHODS ===================
+
+  /**
+   * Generate professional CSL-based citations using Zotero's QuickCopy system
+   * **PHASE 4: Core citation generation with multiple style support**
+   */
+  private async _generateProfessionalCitations(items: any[], citationStyle?: string) {
+    try {
+      elogger.info(`Generating professional citations for ${items.length} item(s) with style: ${citationStyle || 'default'}`)
+
+      // Get citation style - use provided style or user's default QuickCopy style
+      let format: string
+      if (citationStyle) {
+        // Use custom style - format as bibliography mode
+        format = `bibliography=${citationStyle}`
+      } else {
+        // Use user's default QuickCopy format
+        format = Zotero.QuickCopy.getFormatFromURL(Zotero.QuickCopy.lastActiveURL)
+
+        // If no QuickCopy format available or not bibliography, use default style
+        if (!format || !format.startsWith('bibliography=')) {
+          format = 'bibliography=chicago-note-bibliography'
+        }
+      }
+
+      elogger.info(`Using citation format: ${format}`)
+
+      // Generate citations using Zotero's QuickCopy system
+      const citations: string[] = []
+
+      for (const item of items) {
+        try {
+          // Generate citation for individual item
+          const citationContent = Zotero.QuickCopy.getContentFromItems([item], format)
+
+          let citation: string
+          if (citationContent && citationContent.text) {
+            citation = citationContent.text.trim()
+
+            // Clean up the citation - remove extra whitespace and formatting
+            citation = citation.replace(/\n+/g, ' ')
+                             .replace(/\s+/g, ' ')
+                             .replace(/^\s*[•\-*]\s*/, '') // Remove leading bullets
+                             .trim()
+          } else {
+            // Fallback to basic citation if QuickCopy fails
+            citation = this._generateFallbackCitation(item)
+          }
+
+          citations.push(citation)
+          elogger.info(`Generated citation for item ${item.key}: ${citation.substring(0, 100)}...`)
+
+        } catch (error) {
+          elogger.error(`Error generating citation for item ${item.key}: ${error}`)
+          // Use fallback citation for this item
+          const fallbackCitation = this._generateFallbackCitation(item)
+          citations.push(fallbackCitation)
+        }
+      }
+
+      return {
+        success: true,
+        citations: citations,
+        format: format,
+        style: citationStyle || 'default',
+      }
+
+    } catch (error) {
+      elogger.error(`Error in professional citation generation: ${error}`)
+
+      // Return fallback citations for all items
+      const fallbackCitations = items.map(item => this._generateFallbackCitation(item))
+
+      return {
+        success: true,
+        citations: fallbackCitations,
+        format: 'fallback',
+        style: 'basic',
+        warning: `Used fallback citation due to error: ${error.message}`,
+      }
+    }
+  }
+
+  /**
+   * Generate fallback citation when CSL processing fails
+   * **PHASE 4: Robust fallback citation generation**
+   */
+  private _generateFallbackCitation(item: any): string {
+    try {
+      const title = item.getField('title') || 'Untitled'
+      const creators = item.getCreators()
+      const year = item.getField('date') ? new Date(item.getField('date')).getFullYear() : ''
+
+      // Create author-year citation
+      let citation = ''
+      if (creators.length > 0) {
+        const firstCreator = creators[0]
+        const author = firstCreator.lastName || firstCreator.name || 'Unknown Author'
+        citation = year ? `${author} (${year})` : author
+      } else {
+        citation = year ? `(${year})` : title
+      }
+
+      // Add title if not already included and different from author info
+      if (citation !== title && title !== 'Untitled') {
+        citation += `: ${title}`
+      }
+
+      return citation
+
+    } catch (error) {
+      elogger.error(`Error in fallback citation generation: ${error}`)
+      return item.getField('title') || item.key || 'Unknown Item'
+    }
+  }
+
+  /**
+   * Generate API URL for a Zotero item
+   * **PHASE 4: Centralized API URL generation with proper user ID handling**
+   */
+  private _generateApiUrl(item: any): string {
+    try {
+      const library = item.library
+      const itemKey = item.key
+
+      // Check if this is a group library
+      if ((library as any).type === 'group') {
+        return `https://api.zotero.org/groups/${(library as any).id}/items/${itemKey}`
+      } else {
+        // For user libraries, use Zotero.Users.getCurrentUserID()
+        const userID = Zotero.Users.getCurrentUserID()
+        if (userID) {
+          return `https://api.zotero.org/users/${userID}/items/${itemKey}`
+        } else {
+          // Fallback if no user ID available (offline mode)
+          return `zotero://select/library/items/${itemKey}`
+        }
+      }
+    } catch (error) {
+      elogger.error(`Error generating API URL for item ${item.key}: ${error}`)
+      // Ultimate fallback
+      return `zotero://select/library/items/${item.key || 'unknown'}`
+    }
   }
 }
