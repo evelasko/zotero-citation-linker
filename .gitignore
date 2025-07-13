@@ -57,3 +57,11 @@ temp/
 
 zotero-make-it-red-main/
 zotero-source/
+
+# Environment variables and API keys
+.env
+.env.local
+.env.*.local
+
+# Cursor IDE files that might contain API keys
+.cursor/mcp.json

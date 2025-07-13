@@ -13,7 +13,7 @@ export async function install() {
 }
 
 export async function startup({ id, version, resourceURI, rootURI = resourceURI.spec }) {
-  logger.info(`Starting up plugin v${version} «18» - ${id}`)
+  logger.info(`Starting up plugin v${version} «21» - ${id}`)
 
   try {
     // Initialize toolkit instance
