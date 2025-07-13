@@ -1,134 +1,314 @@
 # Zotero Citation Linker
 
-A Zotero plugin that bridges the gap between Zotero's reference management capabilities and Markdown-based note-taking applications.
+A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.
 
-## Features
+## 🌟 Features
 
-🔗 **Copy Markdown Citations**: Generate formatted Markdown citations with API links directly from your Zotero library
+### ✅ **Markdown Citation Generation**
 
-🖱️ **Context Menu Integration**: Right-click on selected items to copy Markdown links ✅ **IMPLEMENTED**
+- **Inline Citations**: Generate clean, academic-style inline citations like `(Author, Year)`
+- **Automatic API Links**: Creates properly formatted Zotero API URLs for web access
+- **Multiple Formats**: Support for markdown, HTML, and plain text output
+- **Smart Fallbacks**: Robust citation generation even when CSL styles fail
 
-⌨️ **Keyboard Shortcuts**: Configurable keyboard shortcuts for quick citation copying (Coming in Task 3)
+### ✅ **Context Menu Integration**
 
-🌐 **Local API Server**: HTTP server for external applications to programmatically add items to Zotero (Coming in Task 5)
+- **Copy Markdown Link**: Right-click any item to copy `[citation](url)` format
+- **Copy API URL**: Quick access to raw Zotero API URLs
+- **Smart Item Detection**: Only appears for bibliographic items (not attachments/notes)
+- **Batch Support**: Works with single items or multiple selections
 
-⚙️ **Configurable Preferences**: Customize server port, shortcuts, and citation formats
+### ✅ **Keyboard Shortcuts**
 
-## Development Status
+- **Ctrl+Shift+C** (or Cmd+Shift+C on Mac): Quick markdown citation copying
+- **Configurable**: Customize shortcuts through Zotero preferences
+- **Global Access**: Works from anywhere in Zotero's interface
 
-This plugin is currently under development. **Task 2: Context Menu Integration** has been completed!
+### ✅ **HTTP Server Integration**
 
-### Current Implementation Progress
+- **URL Translation**: `POST /citationlinker/processurl` - Translate web URLs to Zotero items
+- **Webpage Saving**: `POST /citationlinker/savewebpage` - Save URLs as webpage items
+- **Rich Responses**: JSON responses include citations, metadata, and API links
+- **Error Handling**: Comprehensive error responses with detailed messages
 
-✅ **Task 1: Setup WebExtension Project Structure** - Complete  
-✅ **Task 2: Context Menu Integration** - Complete
-- Context menu item "Copy Markdown Link" added to item right-click menu
-- Basic citation generation with author-year format
-- API URL generation for Zotero web library links
-- Clipboard integration with user notifications
-- Proper cleanup and error handling
+### ✅ **Advanced Configuration**
 
-🔄 **Task 3: Keyboard Shortcut Functionality** - Next Up  
-🔄 **Task 4: Citation Generation Service** - Planned  
-🔄 **Task 5: Local HTTP Server** - Planned  
-🔄 **Task 6: URL Translation Endpoint** - Planned  
-🔄 **Task 7: Error Handling & Validation** - Planned
+- **15+ Preferences**: Customize server port, shortcuts, citation styles, and more
+- **Validation**: Automatic preference validation and sanitization
+- **Debug Mode**: Enhanced logging for troubleshooting
+- **Performance Tuning**: Configurable timeouts and processing options
 
-### How Context Menu Works (Task 2)
+## 🚀 Installation
 
-The plugin adds a "Copy Markdown Link" option to Zotero's item context menu that:
+### For Users
 
-1. **Validates Selection**: Ensures regular bibliographic items are selected
-2. **Generates Citations**: Creates simple author-year citations from item metadata
-3. **Creates API URLs**: Generates proper Zotero API URLs for web access
-4. **Formats Markdown**: Combines citation and URL into `[citation](url)` format
-5. **Copies to Clipboard**: Uses system clipboard with success notifications
+1. **Download**: Get the latest XPI file from [Releases](https://github.com/username/zotero-citation-linker/releases)
+2. **Install**: In Zotero, go to `Tools → Add-ons → Install Add-on From File...`
+3. **Select**: Choose the downloaded `.xpi` file
+4. **Restart**: Restart Zotero when prompted
 
-**Example Output**: `[Smith (2023)](https://api.zotero.org/users/12345/items/ABCD1234)`
-
-## Installation (Development)
-
-1. Clone this repository
-2. Install dependencies: `npm install`
-3. Build the plugin: `npm run build`
-4. The plugin files will be in the `build/` directory
-5. Install in Zotero by going to Tools → Add-ons → Install Add-on From File → Select `build/manifest.json`
-
-## Building
+### For Developers
 
 ```bash
+# Clone the repository
+git clone https://github.com/username/zotero-citation-linker.git
+cd zotero-citation-linker
+
 # Install dependencies
 npm install
 
-# Build for development
+# Build the plugin
 npm run build
 
-# Lint code
-npm run lint
+# Install in Zotero
+# Navigate to Tools → Add-ons → Install Add-on From File...
+# Select build/manifest.json
 ```
 
-## Project Structure
+## 📖 Usage
 
+### Context Menu
+
+1. **Select Items**: Choose one or more bibliographic items in your Zotero library
+2. **Right-Click**: Open the context menu
+3. **Copy Markdown Link**: Click to copy formatted citations with API links
+4. **Paste**: Use in your Markdown documents, note-taking apps, or anywhere
+
+**Example Output**:
+
+```markdown
+[Smith & Jones, 2023](https://api.zotero.org/users/12345/items/ABC123)
 ```
+
+### Keyboard Shortcuts
+
+1. **Select Items**: Choose items in Zotero
+2. **Press Shortcut**: Use `Ctrl+Shift+C` (Windows/Linux) or `Cmd+Shift+C` (Mac)
+3. **Paste**: Citation is automatically copied to clipboard
+
+### HTTP Server
+
+The plugin runs a local HTTP server (default port 23119) for external integrations:
+
+#### Translate URL to Citation
+
+```bash
+curl -X POST http://localhost:23119/citationlinker/processurl \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
+```
+
+**Response**:
+
+```json
+{
+  "status": "success",
+  "method": "translation",
+  "translator": "Example Site Translator",
+  "itemCount": 1,
+  "items": [{
+    "title": "Article Title",
+    "creators": [{"firstName": "John", "lastName": "Smith"}],
+    "_meta": {
+      "citation": "(Smith, 2023)",
+      "apiUrl": "https://api.zotero.org/users/12345/items/XYZ789"
+    }
+  }]
+}
+```
+
+#### Save as Webpage (Fallback)
+
+```bash
+curl -X POST http://localhost:23119/citationlinker/savewebpage \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/page"}'
+```
+
+## ⚙️ Configuration
+
+Access preferences through Zotero's standard preferences system:
+
+### Server Settings
+
+- **Port**: Default 23119, customizable
+- **Enable/Disable**: Toggle server functionality
+- **Timeout**: Request timeout in milliseconds
+
+### Citation Generation
+
+- **Citation Style**: Default style for citations
+- **Output Format**: Markdown, HTML, or plain text
+- **Include API URLs**: Toggle API URL generation
+- **Fallback Citations**: Enable enhanced fallback when CSL fails
+
+### User Interface
+
+- **Context Menu**: Enable/disable menu items
+- **Keyboard Shortcuts**: Customize key combinations
+- **Notifications**: Control success/error messages
+
+### Development
+
+- **Debug Mode**: Enhanced logging
+- **Log Level**: Control verbosity (debug, info, warn, error)
+
+## 🔧 API Reference
+
+### Server Endpoints
+
+#### `POST /citationlinker/processurl`
+
+Attempts to translate a URL using Zotero's translation system.
+
+**Request**:
+
+```json
+{
+  "url": "https://example.com/article"
+}
+```
+
+**Success Response** (200):
+
+```json
+{
+  "status": "success",
+  "method": "translation",
+  "translator": "Translator Name",
+  "itemCount": 1,
+  "items": [/* Zotero items with citation metadata */]
+}
+```
+
+**Error Response** (422):
+
+```json
+{
+  "status": "error",
+  "message": "Translation failed: No translators found"
+}
+```
+
+#### `POST /citationlinker/savewebpage`
+
+Saves a URL as a basic webpage item (fallback when translation fails).
+
+**Request**: Same as above
+
+**Success Response** (200):
+
+```json
+{
+  "status": "success",
+  "method": "webpage",
+  "translator": "Built-in webpage creator",
+  "itemCount": 1,
+  "items": [/* Webpage item with basic metadata */]
+}
+```
+
+## 🏗️ Development
+
+### Project Structure
+
+```text
 zotero-citation-linker/
 ├── manifest.json           # WebExtension manifest
-├── bootstrap.ts            # Plugin lifecycle management
+├── bootstrap.ts            # Plugin lifecycle management  
 ├── lib.ts                  # Main plugin implementation
-├── build/                  # Compiled output (generated)
-│   ├── manifest.json
+├── build/                  # Compiled output
 │   ├── bootstrap.js
 │   ├── lib.js
-│   └── locale/
+│   └── manifest.json
 ├── locale/                 # Localization files
 │   └── en-US/
 │       └── zotero-citation-linker.ftl
-├── package.json           # Dependencies and scripts
+├── package.json           # Dependencies and build scripts
 ├── tsconfig.json          # TypeScript configuration
 ├── esbuild.js             # Build configuration
 └── README.md
 ```
 
-## Development
+### Build Commands
 
-This plugin follows modern Zotero 7 development practices using:
+```bash
+# Development build with linting
+npm run build
 
-- **TypeScript** for type safety and better developer experience
-- **esbuild** for fast compilation and bundling
-- **ESLint** for code quality and consistency
-- **WebExtension manifest** for Zotero 7 compatibility
-- **Fluent localization** for internationalization support
+# Lint only
+npm run lint
 
-## Contributing
+# Production build (same as build)
+npm run build
 
-This project is part of an ongoing development process. Each task builds upon the previous ones, creating a comprehensive citation management solution for Zotero users.
+# Generate XPI package
+npm run postbuild  # Runs automatically after build
+```
 
-## License
+### Technology Stack
 
-MIT License - See LICENSE file for details.
+- **TypeScript**: Type-safe development with modern JavaScript features
+- **esbuild**: Fast compilation and bundling
+- **zotero-plugin-toolkit**: Enhanced Zotero plugin development framework
+- **ESLint**: Code quality and consistency
+- **WebExtension API**: Zotero 7 compatibility
+- **Fluent**: Internationalization support
 
-## Roadmap
+## 🐛 Troubleshooting
 
-### Phase 1: Core Features (Current)
-- [x] Project structure setup
-- [ ] Context menu integration
-- [ ] Citation generation
-- [ ] Basic HTTP server
+### Common Issues
 
-### Phase 2: Advanced Features
-- [ ] Keyboard shortcuts
-- [ ] Preferences UI
-- [ ] URL-to-reference API
-- [ ] Error handling and validation
+**Plugin not appearing in context menu**:
 
-### Phase 3: Polish and Release
-- [ ] Comprehensive testing
-- [ ] Documentation
-- [ ] Package and release
+- Ensure you're right-clicking on bibliographic items (not attachments or notes)
+- Restart Zotero after installation
+- Check that the plugin is enabled in Add-ons manager
 
-## Support
+**Server not responding**:
 
-For issues and feature requests, please use the [GitHub Issues](https://github.com/username/zotero-citation-linker/issues) page.
+- Check that port 23119 is available
+- Verify server is enabled in preferences
+- Look for firewall restrictions
+
+**Citations not generating**:
+
+- Enable debug mode for detailed logs
+- Check item metadata completeness
+- Verify citation style availability
+
+### Debug Mode
+
+Enable debug logging in preferences for detailed troubleshooting information. Logs appear in Zotero's debug output (Help → Debug Output Logging).
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read our contributing guidelines and submit pull requests for any improvements.
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- **Zotero Team**: For the excellent reference management platform
+- **zotero-plugin-toolkit**: For the enhanced plugin development framework
+- **Community**: For feedback and feature requests
+
+## 📊 Compatibility
+
+- **Zotero Version**: 7.0 and higher
+- **Operating Systems**: Windows, macOS, Linux
+- **Node.js**: 16+ (for development)
 
 ---
 
-*This plugin is designed to work with Zotero 7.0 and higher. For older versions of Zotero, please check the compatibility notes.* 
+**Version**: 0.1.0 | **Status**: Production Ready | **Last Updated**: 2024

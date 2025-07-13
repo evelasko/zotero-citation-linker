@@ -1,7 +1,7 @@
 {
     "name": "zotero-citation-linker",
     "version": "0.1.0",
-    "description": "A Zotero plugin that bridges the gap between Zotero's reference management capabilities and Markdown-based note-taking applications",
+    "description": "A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.",
     "type": "module",
     "scripts": {
         "lint": "eslint .",
@@ -14,18 +14,23 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/username/zotero-citation-linker.git"
+        "url": "https://github.com/evelasko/zotero-citation-linker.git"
     },
     "author": {
-        "name": "Plugin Author",
-        "email": "author@example.com"
+        "name": "Enrique Velasco",
+        "email": "h.superpotter@gmail.com"
     },
     "keywords": [
         "zotero",
         "plugin",
         "citation",
         "markdown",
-        "api"
+        "api",
+        "http-server",
+        "inline-citations",
+        "reference-management",
+        "workflow",
+        "automation"
     ],
     "license": "MIT",
     "dependencies": {
