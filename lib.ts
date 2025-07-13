@@ -363,15 +363,9 @@ if (Zotero.platformMajorVersion < 102) {
             elogger.info(`Translation successful - using ${translationResult.items.length} already-saved items`)
             return await self._successResponse(translationResult.items, 'translation', translationResult.translator)
           } else {
-            // Translation failed - fall back to webpage save
-            elogger.info(`Translation failed (${translationResult.reason}), falling back to webpage save`)
-
-            const webpageResult = await self._saveAsWebpage(url)
-            if (webpageResult.success) {
-              return await self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator')
-            } else {
-              return self._errorResponse(500, `Failed to save as webpage: ${webpageResult.error}`)
-            }
+            // Translation failed - return error without fallback
+            elogger.info(`Translation failed: ${translationResult.reason}`)
+            return self._errorResponse(422, `Translation failed: ${translationResult.reason}`)
           }
 
         } catch (error) {
@@ -385,6 +379,64 @@ if (Zotero.platformMajorVersion < 102) {
     // Register the endpoint
     Zotero.Server.Endpoints['/citationlinker/processurl'] = ProcessUrlEndpoint
     elogger.info('Registered /citationlinker/processurl endpoint')
+
+    // Register the separate webpage save endpoint
+    this.registerSaveWebpageEndpoint()
+  }
+
+  /**
+   * Register the separate webpage save endpoint for explicit fallback saving
+   */
+  private registerSaveWebpageEndpoint() {
+    const self = this
+    const elogger = logger
+
+    const SaveWebpageEndpoint = function() {}
+    SaveWebpageEndpoint.prototype = {
+      supportedMethods: ['POST'],
+      supportedDataTypes: ['application/json'],
+
+      init: async function(requestData: any) {
+        elogger.info('SaveWebpage endpoint called')
+
+        try {
+          // Validate request data
+          const validation = self._validateRequest(requestData)
+          if (!validation.valid) {
+            return self._errorResponse(400, validation.error)
+          }
+
+          const { url } = requestData.data
+
+          elogger.info(`Processing URL as webpage: ${url}`)
+
+          // Check if target library is editable
+          const libraryID = Zotero.Libraries.userLibraryID
+          const library = Zotero.Libraries.get(libraryID)
+          if (!library || !library.editable) {
+            return self._errorResponse(500, 'Target library is not editable')
+          }
+
+          // Save as webpage
+          const webpageResult = await self._saveAsWebpage(url)
+          if (webpageResult.success) {
+            elogger.info('Webpage saved successfully')
+            return await self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator')
+          } else {
+            return self._errorResponse(500, `Failed to save as webpage: ${webpageResult.error}`)
+          }
+
+        } catch (error) {
+          Zotero.logError(new Error(`CitationLinker SaveWebpage error: ${error.message}`))
+          Zotero.logError(error)
+          return self._errorResponse(500, `Internal server error: ${error.message}`)
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/savewebpage'] = SaveWebpageEndpoint
+    elogger.info('Registered /citationlinker/savewebpage endpoint')
   }
 
   /**
@@ -394,9 +446,10 @@ if (Zotero.platformMajorVersion < 102) {
     elogger.info('Cleaning up API server endpoints')
 
     try {
-      // Remove our endpoint
+      // Remove our endpoints
       delete Zotero.Server.Endpoints['/citationlinker/processurl']
-      elogger.info('Removed /citationlinker/processurl endpoint')
+      delete Zotero.Server.Endpoints['/citationlinker/savewebpage']
+      elogger.info('Removed /citationlinker/processurl and /citationlinker/savewebpage endpoints')
     } catch (error) {
       elogger.error(`Error cleaning up API endpoints: ${error}`)
     }
