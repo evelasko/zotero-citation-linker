@@ -2,7 +2,16 @@
 
 A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.
 
-## 🌟 Features
+## �� Features
+
+### ✅ **Intelligent Duplicate Detection** 🆕
+
+- **Multi-Identifier Matching**: Perfect detection using DOI, ISBN, PMID, PMC ID, and ArXiv ID
+- **Smart Fuzzy Matching**: Advanced Title + Author + Year similarity with Levenshtein algorithm
+- **URL Normalization**: Detects web content duplicates through intelligent URL cleanup
+- **Data Integrity Protection**: "Oldest item wins" principle preserves external references
+- **Automated Processing**: Score-based handling (≥85: auto-merge, 70-84: warnings, <70: keep)
+- **External Reference Safety**: Protects Obsidian links, custom plugin citations, and workflows
 
 ### ✅ **Markdown Citation Generation**
 
@@ -26,9 +35,9 @@ A powerful Zotero plugin that seamlessly bridges reference management with Markd
 
 ### ✅ **HTTP Server Integration**
 
-- **URL Translation**: `POST /citationlinker/processurl` - Translate web URLs to Zotero items
+- **URL Translation**: `POST /citationlinker/processurl` - Translate web URLs to Zotero items with duplicate detection
 - **Webpage Saving**: `POST /citationlinker/savewebpage` - Save URLs as webpage items
-- **Rich Responses**: JSON responses include citations, metadata, and API links
+- **Rich Responses**: JSON responses include citations, metadata, API links, and duplicate information
 - **Error Handling**: Comprehensive error responses with detailed messages
 
 ### ✅ **Advanced Configuration**
@@ -98,7 +107,7 @@ curl -X POST http://localhost:23119/citationlinker/processurl \
   -d '{"url": "https://example.com/article"}'
 ```
 
-**Response**:
+**Response with Duplicate Detection**:
 
 ```json
 {
@@ -107,13 +116,29 @@ curl -X POST http://localhost:23119/citationlinker/processurl \
   "translator": "Example Site Translator",
   "itemCount": 1,
   "items": [{
+    "key": "EXISTING123",
     "title": "Article Title",
     "creators": [{"firstName": "John", "lastName": "Smith"}],
     "_meta": {
       "citation": "(Smith, 2023)",
-      "apiUrl": "https://api.zotero.org/users/12345/items/XYZ789"
+      "apiUrl": "https://api.zotero.org/users/12345/items/EXISTING123"
     }
-  }]
+  }],
+  "duplicateInfo": {
+    "processed": true,
+    "autoMerged": [
+      {
+        "action": "kept_existing",
+        "keptItemKey": "EXISTING123",
+        "deletedItemKey": "NEW456",
+        "reason": "DOI match + Title similarity",
+        "score": 98,
+        "message": "Preserved existing item to maintain external references"
+      }
+    ],
+    "possibleDuplicates": [],
+    "errors": []
+  }
 }
 ```
 
@@ -124,6 +149,37 @@ curl -X POST http://localhost:23119/citationlinker/savewebpage \
   -H "Content-Type: application/json" \
   -d '{"url": "https://example.com/page"}'
 ```
+
+### Duplicate Detection
+
+The plugin automatically detects and handles duplicates when processing URLs:
+
+#### Detection Methods
+
+1. **Perfect Matching** (Auto-merge):
+   - **DOI**: Digital Object Identifiers (Score: 100)
+   - **PMID**: PubMed IDs for medical literature (Score: 98)
+   - **PMC ID**: PubMed Central IDs (Score: 98)
+   - **ArXiv ID**: Preprint identifiers (Score: 96)
+   - **ISBN**: Book identifiers (Score: 95)
+
+2. **Fuzzy Matching** (Warnings for 70-84, Auto-merge for ≥85):
+   - **Title + Author + Year**: Weighted similarity scoring
+   - **URL Normalization**: Same content from different tracking URLs
+   - **Levenshtein Distance**: Advanced string similarity algorithms
+
+#### Duplicate Handling Logic
+
+- **Score ≥ 85**: Auto-delete new item, keep existing item, preserve external references
+- **Score 70-84**: Keep new item, flag as possible duplicate for user review
+- **Score < 70**: Keep new item, no duplicate detected
+
+#### Benefits
+
+- **Reference Integrity**: External citations (Obsidian, custom tools) remain valid
+- **Library Cleanliness**: Automatic duplicate prevention without user intervention
+- **Cross-Platform Detection**: Same content from different sources (PubMed, ArXiv, journal sites)
+- **Workflow Continuity**: Existing automation scripts and integrations unaffected
 
 ## ⚙️ Configuration
 
@@ -177,7 +233,22 @@ Attempts to translate a URL using Zotero's translation system.
   "method": "translation",
   "translator": "Translator Name",
   "itemCount": 1,
-  "items": [/* Zotero items with citation metadata */]
+  "items": [/* Zotero items with citation metadata */],
+  "duplicateInfo": {
+    "processed": true,
+    "autoMerged": [
+      {
+        "action": "kept_existing",
+        "keptItemKey": "EXISTING123",
+        "deletedItemKey": "NEW456",
+        "reason": "DOI match + Title similarity",
+        "score": 98,
+        "message": "Preserved existing item to maintain external references"
+      }
+    ],
+    "possibleDuplicates": [],
+    "errors": []
+  }
 }
 ```
 
@@ -311,4 +382,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Version**: 0.1.0 | **Status**: Production Ready | **Last Updated**: 2024
+**Version**: 1.1.0 | **Status**: Production Ready | **Last Updated**: December 2024

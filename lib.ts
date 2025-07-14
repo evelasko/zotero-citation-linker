@@ -7,12 +7,22 @@ const elogger = new Logger('ZoteroCitationLinker Server Endpoint')
 // Declare the toolkit variable that's passed from bootstrap.js
 declare const ztoolkit: any
 
+// Global URL constructor declaration for TypeScript
+declare const URL: typeof globalThis.URL
+
 const {
   utils: Cu,
 } = Components
 
 if (Zotero.platformMajorVersion < 102) {
   Cu.importGlobalProperties(['fetch', 'URL'])
+} else {
+  // Ensure URL is available for newer versions too
+  try {
+    Cu.importGlobalProperties(['URL'])
+  } catch {
+    // URL might already be available globally
+  }
 }
 
 /**
@@ -361,7 +371,7 @@ if (Zotero.platformMajorVersion < 102) {
           if (translationResult.success) {
             // Translation successful - items are already saved by the translation system
             elogger.info(`Translation successful - using ${translationResult.items.length} already-saved items`)
-            return await self._successResponse(translationResult.items, 'translation', translationResult.translator)
+            return await self._successResponse(translationResult.items, 'translation', translationResult.translator, translationResult.duplicateProcessing)
           } else {
             // Translation failed - return error without fallback
             elogger.info(`Translation failed: ${translationResult.reason}`)
@@ -421,7 +431,7 @@ if (Zotero.platformMajorVersion < 102) {
           const webpageResult = await self._saveAsWebpage(url)
           if (webpageResult.success) {
             elogger.info('Webpage saved successfully')
-            return await self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator')
+            return await self._successResponse([webpageResult.item], 'webpage', 'Built-in webpage creator', undefined)
           } else {
             return self._errorResponse(500, `Failed to save as webpage: ${webpageResult.error}`)
           }
@@ -725,6 +735,878 @@ if (Zotero.platformMajorVersion < 102) {
     return { valid: true }
   }
 
+  // =================== DUPLICATE DETECTION INFRASTRUCTURE ===================
+
+  /**
+   * Main orchestrator for duplicate detection and processing
+   * **PHASE 1: Core Infrastructure**
+   * @param translatedItems - Array of items returned from translation
+   * @returns Processing results with actions taken and warnings
+   */
+  private async _processDuplicates(translatedItems: any[]) {
+    elogger.info(`Starting duplicate detection for ${translatedItems.length} translated items`)
+
+    const processingResults = {
+      autoMerged: [] as any[],
+      possibleDuplicates: [] as any[],
+      processed: true,
+      errors: [] as string[],
+    }
+
+    try {
+      for (let i = 0; i < translatedItems.length; i++) {
+        const item = translatedItems[i]
+        elogger.info(`Processing item ${i + 1}/${translatedItems.length}: ${item.getField('title') || 'Untitled'}`)
+
+        try {
+          // Find potential duplicates for this item
+          const duplicateCandidates = await this._findPotentialDuplicates(item)
+
+          if (duplicateCandidates.length === 0) {
+            elogger.info(`No duplicates found for item ${item.key}`)
+            continue
+          }
+
+          elogger.info(`Found ${duplicateCandidates.length} potential duplicate candidates for item ${item.key}`)
+
+          // **PHASE 2: Process candidates based on score**
+          for (const candidate of duplicateCandidates) {
+            elogger.info(`Candidate duplicate: ${candidate.item.key} (score: ${candidate.score}, reason: ${candidate.reason})`)
+
+            if (candidate.score >= 85) {
+              // High confidence duplicate - auto-delete new item, use existing
+              elogger.info(`High confidence duplicate detected (score: ${candidate.score}). Auto-replacing new item with existing.`)
+              const mergeResult = await this._handleDefiniteDuplicate(item, candidate.item, candidate.reason, candidate.score)
+              if (mergeResult.success) {
+                processingResults.autoMerged.push(mergeResult.data)
+                // **INTEGRITY FIX: Replace new item with existing item to preserve external references**
+                const originalKey = item.key
+                translatedItems[i] = candidate.item
+                elogger.info(`✅ INTEGRITY PRESERVED: Replaced new item ${originalKey} with existing item ${candidate.item.key} in response`)
+              } else {
+                // **FIX: Graceful degradation for deletion failures**
+                elogger.info(`Auto-deletion failed (${mergeResult.error}), converting to possible duplicate warning`)
+
+                // Convert high-confidence duplicate to warning when deletion fails
+                const warningData = this._flagPossibleDuplicate(item, {
+                  ...candidate,
+                  reason: `${candidate.reason} (auto-deletion failed: ${mergeResult.error})`,
+                })
+                processingResults.possibleDuplicates.push(warningData)
+                processingResults.errors.push(`Failed to auto-merge duplicate: ${mergeResult.error}`)
+              }
+              break // Stop processing other candidates for this item
+            } else if (candidate.score >= 70) {
+              // Medium confidence - flag as possible duplicate but keep new item
+              elogger.info(`Possible duplicate detected (score: ${candidate.score}). Keeping new item but flagging for user attention.`)
+              const warningData = this._flagPossibleDuplicate(item, candidate)
+              processingResults.possibleDuplicates.push(warningData)
+              // Don't break - check for higher scoring candidates
+            }
+          }
+
+        } catch (error) {
+          const errorMsg = `Error processing duplicates for item ${item.key}: ${error.message}`
+          elogger.error(errorMsg)
+          processingResults.errors.push(errorMsg)
+          // Continue processing other items
+        }
+      }
+
+      elogger.info(`Duplicate processing completed. Auto-merged: ${processingResults.autoMerged.length}, Possible duplicates: ${processingResults.possibleDuplicates.length}, Errors: ${processingResults.errors.length}`)
+      return processingResults
+
+    } catch (error) {
+      elogger.error(`Critical error in duplicate processing: ${error.message}`)
+      processingResults.errors.push(`Critical processing error: ${error.message}`)
+      return processingResults
+    }
+  }
+
+  /**
+   * Find potential duplicate items in the library
+   * **PHASE 1: Basic DOI lookup with infrastructure for expansion**
+   * @param item - The item to check for duplicates
+   * @returns Array of potential duplicates with scores
+   */
+  private async _findPotentialDuplicates(item: any) {
+    elogger.info(`Searching for potential duplicates of item: ${item.key}`)
+
+    const candidates: any[] = []
+
+    try {
+      // Extract identifiers from the item
+      const identifiers = this._extractIdentifiers(item)
+      elogger.info(`Extracted identifiers: ${JSON.stringify(identifiers)}`)
+
+      // **PHASE 1: DOI-based lookup (most reliable)**
+      if (identifiers.doi) {
+        elogger.info(`Searching for DOI matches: ${identifiers.doi}`)
+
+        try {
+          // **FIX: Use proper search API instead of non-existent getByField**
+          const search = new Zotero.Search()
+          search.addCondition('DOI', 'is', identifiers.doi)
+          search.addCondition('itemType', 'isNot', 'attachment')
+          search.addCondition('itemType', 'isNot', 'note')
+
+          const itemIDs = await search.search()
+          const doiMatches = await Zotero.Items.getAsync(itemIDs)
+
+          for (const existingItem of doiMatches) {
+            // Skip if it's the same item (shouldn't happen in practice, but safety check)
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found DOI match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 100, // Perfect DOI match
+              reason: 'DOI match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for DOI matches: ${error.message}`)
+        }
+      }
+
+      // **PHASE 1: ISBN-based lookup (for books)**
+      if (identifiers.isbn) {
+        elogger.info(`Searching for ISBN matches: ${identifiers.isbn}`)
+
+        try {
+          // **FIX: Use proper search API instead of non-existent getByField**
+          const search = new Zotero.Search()
+          search.addCondition('ISBN', 'is', identifiers.isbn)
+          search.addCondition('itemType', 'isNot', 'attachment')
+          search.addCondition('itemType', 'isNot', 'note')
+
+          const itemIDs = await search.search()
+          const isbnMatches = await Zotero.Items.getAsync(itemIDs)
+
+          for (const existingItem of isbnMatches) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found ISBN match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 95, // Near-perfect ISBN match
+              reason: 'ISBN match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for ISBN matches: ${error.message}`)
+        }
+      }
+
+      // **PHASE 2: Enhanced fuzzy matching with Title + Author + Year**
+      if (identifiers.title && identifiers.firstAuthor && identifiers.year) {
+        elogger.info('Searching for Title + Author + Year combinations')
+
+        try {
+          // Search for items by first author
+          const authorItems = await this._searchByCreator(identifiers.firstAuthor)
+
+          for (const existingItem of authorItems) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            // Calculate comprehensive similarity score
+            const combinedScore = this._calculateCombinedSimilarity(identifiers, existingItem)
+
+            if (combinedScore >= 70) { // Only add candidates with reasonable scores
+              elogger.info(`Found potential match: ${existingItem.key} (combined score: ${combinedScore})`)
+
+              candidates.push({
+                item: existingItem,
+                score: combinedScore,
+                reason: `Title + Author + Year similarity (${combinedScore}%)`,
+                confidence: combinedScore >= 85 ? 'high' : 'medium',
+              })
+            }
+          }
+        } catch (error) {
+          elogger.error(`Error in enhanced fuzzy matching: ${error.message}`)
+        }
+      } else if (identifiers.title) {
+        // Fallback: Title-only matching for items without author/year
+        elogger.info('Performing title-only fuzzy matching')
+
+        try {
+          const titleScore = await this._performTitleOnlySearch(identifiers.title, item)
+          if (titleScore.length > 0) {
+            candidates.push(...titleScore)
+          }
+        } catch (error) {
+          elogger.error(`Error in title-only matching: ${error.message}`)
+        }
+      }
+
+      // **PHASE 3: Enhanced identifier matching - PMID, PMC ID, ArXiv ID, URL**
+
+      // PMID matching (for medical literature)
+      if (identifiers.pmid) {
+        elogger.info(`Searching for PMID matches: ${identifiers.pmid}`)
+
+        try {
+          // Search items with same PMID in extra field
+          const pmidItems = await this._searchByExtraField('pmid', identifiers.pmid)
+
+          for (const existingItem of pmidItems) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found PMID match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 98, // Very high confidence for PMID matches
+              reason: 'PMID match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for PMID matches: ${error.message}`)
+        }
+      }
+
+      // PMC ID matching
+      if (identifiers.pmcid) {
+        elogger.info(`Searching for PMC ID matches: ${identifiers.pmcid}`)
+
+        try {
+          const pmcItems = await this._searchByExtraField('pmc', identifiers.pmcid)
+
+          for (const existingItem of pmcItems) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found PMC ID match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 98, // Very high confidence for PMC ID matches
+              reason: 'PMC ID match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for PMC ID matches: ${error.message}`)
+        }
+      }
+
+      // ArXiv ID matching (for preprints)
+      if (identifiers.arxivId) {
+        elogger.info(`Searching for ArXiv ID matches: ${identifiers.arxivId}`)
+
+        try {
+          const arxivItems = await this._searchByExtraField('arxiv', identifiers.arxivId)
+
+          for (const existingItem of arxivItems) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found ArXiv ID match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 96, // High confidence for ArXiv matches
+              reason: 'ArXiv ID match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for ArXiv ID matches: ${error.message}`)
+        }
+      }
+
+      // URL normalization matching (for web content)
+      if (identifiers.normalizedUrl) {
+        elogger.info(`Searching for normalized URL matches: ${identifiers.normalizedUrl}`)
+
+        try {
+          const urlItems = await this._searchByNormalizedUrl(identifiers.normalizedUrl, item)
+
+          for (const existingItem of urlItems) {
+            if (existingItem.key === item.key) {
+              continue
+            }
+
+            elogger.info(`Found URL match: ${existingItem.key} - ${existingItem.getField('title')}`)
+
+            candidates.push({
+              item: existingItem,
+              score: 88, // High confidence for URL matches
+              reason: 'Normalized URL match',
+              confidence: 'high',
+            })
+          }
+        } catch (error) {
+          elogger.error(`Error searching for URL matches: ${error.message}`)
+        }
+      }
+
+      // **PHASE 3: Intelligent candidate processing - sort, deduplicate, prioritize**
+
+      // Remove duplicate candidates (same item found through different identifiers)
+      const uniqueCandidates = this._deduplicateCandidates(candidates)
+
+      // Sort by confidence score (highest first)
+      const sortedCandidates = uniqueCandidates.sort((a, b) => b.score - a.score)
+
+      // Limit to top 5 for performance
+      const limitedCandidates = sortedCandidates.slice(0, 5)
+
+      elogger.info(`Found ${candidates.length} total candidates, ${uniqueCandidates.length} unique, returning top ${limitedCandidates.length}`)
+      return limitedCandidates
+
+    } catch (error) {
+      elogger.error(`Error in _findPotentialDuplicates: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Extract key identifiers from an item for duplicate detection
+   * **PHASE 1: Basic identifier extraction**
+   * @param item - Zotero item to extract identifiers from
+   * @returns Object containing available identifiers
+   */
+  private _extractIdentifiers(item: any) {
+    const identifiers: any = {}
+
+    try {
+      // DOI (most reliable identifier)
+      const doi = item.getField('DOI')
+      if (doi && doi.trim()) {
+        // Normalize DOI (remove URL prefix if present)
+        const normalizedDoi = doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, '').trim()
+        if (normalizedDoi) {
+          identifiers.doi = normalizedDoi
+        }
+      }
+
+      // ISBN (for books)
+      const isbn = item.getField('ISBN')
+      if (isbn && isbn.trim()) {
+        // Normalize ISBN (remove hyphens and spaces)
+        const normalizedIsbn = isbn.replace(/[-\s]/g, '').trim()
+        if (normalizedIsbn) {
+          identifiers.isbn = normalizedIsbn
+        }
+      }
+
+      // Title (for fuzzy matching - Phase 2)
+      const title = item.getField('title')
+      if (title && title.trim()) {
+        identifiers.title = title.trim()
+      }
+
+      // First author (for fuzzy matching - Phase 2)
+      const creators = item.getCreators()
+      if (creators && creators.length > 0) {
+        const firstCreator = creators[0]
+        if (firstCreator.lastName) {
+          identifiers.firstAuthor = firstCreator.lastName
+        } else if (firstCreator.name) {
+          identifiers.firstAuthor = firstCreator.name
+        }
+      }
+
+      // Publication year (for fuzzy matching - Phase 2)
+      const date = item.getField('date')
+      if (date) {
+        try {
+          const year = new Date(date).getFullYear()
+          if (!isNaN(year) && year > 1000 && year <= new Date().getFullYear() + 10) {
+            identifiers.year = year
+          }
+        } catch {
+          // If date parsing fails, try to extract 4-digit year from string
+          const yearMatch = date.toString().match(/\b(19|20)\d{2}\b/)
+          if (yearMatch) {
+            identifiers.year = parseInt(yearMatch[0])
+          }
+        }
+      }
+
+      // Item type (for relevance filtering)
+      identifiers.itemType = item.itemType
+
+      // **PHASE 3: Enhanced identifier extraction - PMID, PMC ID, ArXiv ID, URL**
+
+      // PMID (PubMed ID) - for medical literature
+      const pmid = item.getField('PMID') || this._extractPMIDFromExtra(item)
+      if (pmid && pmid.trim()) {
+        identifiers.pmid = pmid.trim()
+      }
+
+      // PMC ID (PubMed Central ID) - for open access medical literature
+      const pmcid = this._extractPMCIDFromExtra(item)
+      if (pmcid && pmcid.trim()) {
+        identifiers.pmcid = pmcid.trim()
+      }
+
+      // ArXiv ID - for preprints
+      const arxivId = this._extractArXivIDFromExtra(item)
+      if (arxivId && arxivId.trim()) {
+        identifiers.arxivId = arxivId.trim()
+      }
+
+      // URL normalization - for webpage and document matching
+      const url = item.getField('url')
+      if (url && url.trim()) {
+        identifiers.originalUrl = url.trim()
+        identifiers.normalizedUrl = this._normalizeUrl(url.trim())
+      }
+
+      // Enhanced title normalization for better matching
+      if (identifiers.title) {
+        identifiers.normalizedTitle = this._normalizeTitle(identifiers.title)
+      }
+
+      elogger.info(`Extracted identifiers for ${item.key}: DOI=${identifiers.doi || 'none'}, ISBN=${identifiers.isbn || 'none'}, PMID=${identifiers.pmid || 'none'}, ArXiv=${identifiers.arxivId || 'none'}, Title=${identifiers.title ? 'present' : 'none'}`)
+
+      return identifiers
+
+    } catch (error) {
+      elogger.error(`Error extracting identifiers from item ${item.key}: ${error.message}`)
+      return identifiers
+    }
+  }
+
+  /**
+   * Handle high confidence duplicate (score ≥ 85) by safely deleting new item and returning existing
+   * **PHASE 2: Auto-deletion logic for definite duplicates**
+   * **INTEGRITY FIX: Always preserve existing item to maintain external references**
+   * @param newItem - The newly created item to be deleted
+   * @param existingItem - The existing item to keep (preserves external references)
+   * @param reason - Reason for the match
+   * @param score - Confidence score
+   * @returns Result of the merge operation
+   */
+  private async _handleDefiniteDuplicate(newItem: any, existingItem: any, reason: string, score: number) {
+    try {
+      elogger.info(`Handling definite duplicate: deleting new item ${newItem.key}, keeping existing ${existingItem.key}`)
+
+      // Safely delete the new item
+      const deleteResult = await this._safelyDeleteItem(newItem)
+
+      if (deleteResult.success) {
+        return {
+          success: true,
+          data: {
+            action: 'kept_existing',
+            keptItemKey: existingItem.key,
+            deletedItemKey: newItem.key,
+            reason: reason,
+            score: score,
+            deletedSuccessfully: true,
+            message: `Preserved existing item ${existingItem.key} to maintain external references`,
+          },
+        }
+      } else {
+        elogger.error(`Failed to delete duplicate item ${newItem.key}: ${deleteResult.error}`)
+        return {
+          success: false,
+          error: `Failed to delete duplicate: ${deleteResult.error}`,
+        }
+      }
+
+    } catch (error) {
+      elogger.error(`Error in _handleDefiniteDuplicate: ${error.message}`)
+      return {
+        success: false,
+        error: `Error handling duplicate: ${error.message}`,
+      }
+    }
+  }
+
+  /**
+   * Flag medium confidence duplicate (score 70-84) for user attention
+   * **PHASE 2: Warning system for possible duplicates**
+   * @param newItem - The new item to flag
+   * @param candidate - The potential duplicate candidate
+   * @returns Warning data for response
+   */
+  private _flagPossibleDuplicate(newItem: any, candidate: any) {
+    try {
+      const warningData = {
+        itemKey: newItem.key,
+        itemTitle: newItem.getField('title') || 'Untitled',
+        duplicateKey: candidate.item.key,
+        duplicateTitle: candidate.item.getField('title') || 'Untitled',
+        score: candidate.score,
+        reason: candidate.reason,
+        confidence: candidate.confidence,
+        message: `Possible duplicate detected: "${candidate.item.getField('title')}" (${candidate.reason})`,
+      }
+
+      elogger.info(`Flagged possible duplicate: ${newItem.key} potentially matches ${candidate.item.key} (score: ${candidate.score})`)
+      return warningData
+
+    } catch (error) {
+      elogger.error(`Error flagging possible duplicate: ${error.message}`)
+      return {
+        itemKey: newItem.key || 'unknown',
+        duplicateKey: candidate.item.key || 'unknown',
+        score: candidate.score || 0,
+        reason: candidate.reason || 'unknown',
+        error: `Error creating warning: ${error.message}`,
+      }
+    }
+  }
+
+  /**
+   * Safely delete an item with comprehensive error handling
+   * **PHASE 2: Safe deletion with rollback capabilities**
+   * **PHASE 3 FIX: Improved timeout handling and transaction management**
+   * @param item - The item to delete
+   * @returns Result of deletion operation
+   */
+  private async _safelyDeleteItem(item: any) {
+    try {
+      elogger.info(`Attempting to safely delete item: ${item.key}`)
+
+      // Check if library is editable
+      const library = item.library
+      if (!library || !library.editable) {
+        return {
+          success: false,
+          error: 'Cannot delete item: library is not editable',
+        }
+      }
+
+      // Check if item can be deleted (not already deleted, etc.)
+      if (item.deleted) {
+        return {
+          success: false,
+          error: 'Item is already deleted',
+        }
+      }
+
+      // **FIX: Use eraseTx() directly without wrapping in another transaction**
+      // eraseTx() already handles its own transaction internally
+      // Adding a timeout to prevent hanging
+      const deletePromise = item.eraseTx()
+      const timeoutPromise = new Promise((_, reject) => {
+        const timer = Components.classes['@mozilla.org/timer;1'].createInstance(Components.interfaces.nsITimer)
+        timer.initWithCallback(() => {
+          reject(new Error('Deletion operation timed out after 5 seconds'))
+        }, 5000, Components.interfaces.nsITimer.TYPE_ONE_SHOT)
+      })
+
+      await Promise.race([deletePromise, timeoutPromise])
+
+      elogger.info(`Successfully deleted item: ${item.key}`)
+      return { success: true }
+
+    } catch (error) {
+      elogger.error(`Error deleting item ${item.key}: ${error.message}`)
+
+      // **FIX: Enhanced error categorization**
+      if (error.message.includes('timed out') || error.message.includes('timeout')) {
+        return {
+          success: false,
+          error: `Deletion timed out - this may be due to sync conflicts. Item still exists: ${error.message}`,
+          category: 'timeout',
+        }
+      } else if (error.message.includes('transaction') || error.message.includes('database')) {
+        return {
+          success: false,
+          error: `Database transaction error - item may still exist: ${error.message}`,
+          category: 'transaction',
+        }
+      } else {
+        return {
+          success: false,
+          error: `Deletion failed: ${error.message}`,
+          category: 'general',
+        }
+      }
+    }
+  }
+
+  /**
+   * Calculate title similarity score for fuzzy matching
+   * **PHASE 2: Enhanced fuzzy matching system**
+   * @param title1 - First title to compare
+   * @param title2 - Second title to compare
+   * @returns Similarity score (0-100)
+   */
+  private _calculateTitleSimilarity(title1: string, title2: string): number {
+    try {
+      if (!title1 || !title2) {
+        return 0
+      }
+
+      // Normalize titles for comparison
+      const normalized1 = this._normalizeTitle(title1)
+      const normalized2 = this._normalizeTitle(title2)
+
+      // Exact match
+      if (normalized1 === normalized2) {
+        return 95
+      }
+
+      // Calculate similarity using Levenshtein distance
+      const similarity = this._calculateLevenshteinSimilarity(normalized1, normalized2)
+
+      // Convert to score
+      if (similarity >= 0.95) {
+        return 90
+      } else if (similarity >= 0.90) {
+        return 85
+      } else if (similarity >= 0.80) {
+        return 75
+      } else if (similarity >= 0.70) {
+        return 65
+      } else {
+        return Math.round(similarity * 60) // Max 60 for lower similarities
+      }
+
+    } catch (error) {
+      elogger.error(`Error calculating title similarity: ${error.message}`)
+      return 0
+    }
+  }
+
+  /**
+   * Normalize title for comparison
+   * **PHASE 2: Title normalization utilities**
+   * @param title - Title to normalize
+   * @returns Normalized title
+   */
+  private _normalizeTitle(title: string): string {
+    return title
+      .toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove punctuation
+      .replace(/\s+/g, ' ')    // Normalize whitespace
+      .trim()
+  }
+
+  /**
+   * Calculate Levenshtein similarity between two strings
+   * **PHASE 2: String similarity algorithm**
+   * @param str1 - First string
+   * @param str2 - Second string
+   * @returns Similarity ratio (0-1)
+   */
+  private _calculateLevenshteinSimilarity(str1: string, str2: string): number {
+    const longer = str1.length > str2.length ? str1 : str2
+    const shorter = str1.length > str2.length ? str2 : str1
+
+    if (longer.length === 0) {
+      return 1.0
+    }
+
+    const editDistance = this._levenshteinDistance(longer, shorter)
+    return (longer.length - editDistance) / longer.length
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   * **PHASE 2: Core string distance algorithm**
+   * @param str1 - First string
+   * @param str2 - Second string
+   * @returns Edit distance
+   */
+  private _levenshteinDistance(str1: string, str2: string): number {
+    const matrix = []
+
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i]
+    }
+
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j
+    }
+
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1]
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1, // substitution
+            matrix[i][j - 1] + 1,     // insertion
+            matrix[i - 1][j] + 1,     // deletion
+          )
+        }
+      }
+    }
+
+    return matrix[str2.length][str1.length]
+  }
+
+  /**
+   * Search for items by creator (author) name
+   * **PHASE 2: Author-based search utility**
+   * @param authorName - Author name to search for
+   * @returns Array of items by that author
+   */
+  private async _searchByCreator(authorName: string) {
+    try {
+      // Use Zotero's search API to find items by creator
+      const search = new Zotero.Search()
+      search.addCondition('creator', 'contains', authorName)
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      elogger.info(`Found ${items.length} items by author: ${authorName}`)
+      return items.slice(0, 10) // Limit for performance
+
+    } catch (error) {
+      elogger.error(`Error searching by creator: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Calculate combined similarity score for Title + Author + Year
+   * **PHASE 2: Comprehensive similarity scoring**
+   * @param identifiers - Identifiers from new item
+   * @param existingItem - Existing item to compare against
+   * @returns Combined similarity score (0-100)
+   */
+  private _calculateCombinedSimilarity(identifiers: any, existingItem: any): number {
+    try {
+      let totalScore = 0
+      let weightedFactors = 0
+
+      // Title similarity (weight: 0.5)
+      const existingTitle = existingItem.getField('title')
+      if (existingTitle && identifiers.title) {
+        const titleScore = this._calculateTitleSimilarity(identifiers.title, existingTitle)
+        totalScore += titleScore * 0.5
+        weightedFactors += 0.5
+      }
+
+      // Author similarity (weight: 0.3)
+      const existingCreators = existingItem.getCreators()
+      if (existingCreators.length > 0 && identifiers.firstAuthor) {
+        const existingAuthor = existingCreators[0].lastName || existingCreators[0].name
+        if (existingAuthor) {
+          const authorScore = this._calculateAuthorSimilarity(identifiers.firstAuthor, existingAuthor)
+          totalScore += authorScore * 0.3
+          weightedFactors += 0.3
+        }
+      }
+
+      // Year similarity (weight: 0.2)
+      const existingDate = existingItem.getField('date')
+      if (existingDate && identifiers.year) {
+        const existingYear = new Date(existingDate).getFullYear()
+        if (existingYear === identifiers.year) {
+          totalScore += 100 * 0.2 // Exact year match
+          weightedFactors += 0.2
+        } else if (Math.abs(existingYear - identifiers.year) <= 1) {
+          totalScore += 80 * 0.2 // Close year match
+          weightedFactors += 0.2
+        }
+      }
+
+      // Calculate final weighted score
+      const finalScore = weightedFactors > 0 ? Math.round(totalScore / weightedFactors) : 0
+
+      elogger.info(`Combined similarity: ${finalScore} (title: ${identifiers.title?.substring(0, 30)}...)`)
+      return finalScore
+
+    } catch (error) {
+      elogger.error(`Error calculating combined similarity: ${error.message}`)
+      return 0
+    }
+  }
+
+  /**
+   * Calculate author name similarity
+   * **PHASE 2: Author comparison utility**
+   * @param author1 - First author name
+   * @param author2 - Second author name
+   * @returns Similarity score (0-100)
+   */
+  private _calculateAuthorSimilarity(author1: string, author2: string): number {
+    try {
+      const normalized1 = author1.toLowerCase().trim()
+      const normalized2 = author2.toLowerCase().trim()
+
+      if (normalized1 === normalized2) {
+        return 100
+      }
+
+      // Check if one is contained in the other (handles "Smith" vs "Smith, J.")
+      if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) {
+        return 95
+      }
+
+      // Use Levenshtein similarity for other cases
+      const similarity = this._calculateLevenshteinSimilarity(normalized1, normalized2)
+      return Math.round(similarity * 100)
+
+    } catch (error) {
+      elogger.error(`Error calculating author similarity: ${error.message}`)
+      return 0
+    }
+  }
+
+  /**
+   * Perform title-only search as fallback
+   * **PHASE 2: Title-only matching fallback**
+   * @param title - Title to search for
+   * @param excludeItem - Item to exclude from results
+   * @returns Array of potential matches
+   */
+  private async _performTitleOnlySearch(title: string, excludeItem: any) {
+    try {
+      const candidates = []
+
+      // Use Zotero's search to find similar titles
+      const search = new Zotero.Search()
+      search.addCondition('title', 'contains', title.split(' ').slice(0, 3).join(' ')) // First 3 words
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      for (const existingItem of items.slice(0, 5)) { // Limit for performance
+        if (existingItem.key === excludeItem.key) {
+          continue
+        }
+
+        const titleScore = this._calculateTitleSimilarity(title, existingItem.getField('title'))
+        if (titleScore >= 70) {
+          candidates.push({
+            item: existingItem,
+            score: titleScore,
+            reason: `Title similarity (${titleScore}%)`,
+            confidence: titleScore >= 85 ? 'high' : 'medium',
+          })
+        }
+      }
+
+      return candidates
+
+    } catch (error) {
+      elogger.error(`Error in title-only search: ${error.message}`)
+      return []
+    }
+  }
+
   /**
    * Attempt to translate the URL using Zotero's translation system
    * **PHASE 4 FIX: Enhanced translation detection and processing**
@@ -781,21 +1663,27 @@ if (Zotero.platformMajorVersion < 102) {
 
       // Convert items to proper format if they exist
       if (items && items.length > 0) {
+        // **INTEGRITY FIX: Process duplicates BEFORE formatting to ensure correct item data**
+        elogger.info('Starting duplicate detection for translated items')
+        const duplicateResults = await this._processDuplicates(items)
+
+        // **NOW format the final items (after duplicate processing may have replaced some)**
         const formattedItems = items.map((item: any) => {
           const jsonItem = item.toJSON()
           jsonItem.key = item.key
           jsonItem.version = item.version
           jsonItem.itemID = item.id
 
-          elogger.info(`Formatted item: ${jsonItem.title || 'No title'} (${jsonItem.itemType})`)
+          elogger.info(`Formatted final item: ${jsonItem.title || 'No title'} (${jsonItem.itemType}) - Key: ${jsonItem.key}`)
           return jsonItem
         })
 
-        elogger.info(`Translation successful: ${formattedItems.length} items formatted`)
+        elogger.info(`Translation successful: ${formattedItems.length} items formatted, duplicate processing completed`)
         return {
           success: true,
           items: formattedItems,
           translator: translator.label,
+          duplicateProcessing: duplicateResults,
         }
       }
 
@@ -1102,8 +1990,9 @@ if (Zotero.platformMajorVersion < 102) {
   /**
    * Generate success response
    * **PHASE 4: Enhanced with citation data and comprehensive metadata**
+   * **PHASE 2: Enhanced with duplicate processing information**
    */
-  private async _successResponse(items: any[], method: string, translator: string) {
+  private async _successResponse(items: any[], method: string, translator: string, duplicateProcessing?: any) {
     try {
       // **PHASE 4: Generate citations for all items in server response**
       const enrichedItems = await Promise.all(items.map(async (item, index) => {
@@ -1157,6 +2046,15 @@ if (Zotero.platformMajorVersion < 102) {
         itemCount: items.length,
         timestamp: new Date().toISOString(),
         items: enrichedItems,
+        // **PHASE 2: Include duplicate processing information**
+        duplicateInfo: duplicateProcessing ? {
+          processed: duplicateProcessing.processed,
+          autoMerged: duplicateProcessing.autoMerged,
+          possibleDuplicates: duplicateProcessing.possibleDuplicates,
+          ...(duplicateProcessing.errors && duplicateProcessing.errors.length > 0 && {
+            errors: duplicateProcessing.errors,
+          }),
+        } : { processed: false },
         _links: {
           documentation: 'https://github.com/your-repo/zotero-citation-linker',
           zoteroApi: 'https://api.zotero.org/',
@@ -1177,6 +2075,11 @@ if (Zotero.platformMajorVersion < 102) {
         itemCount: items.length,
         items: items,
         warning: `Citation enhancement failed: ${error.message}`,
+        duplicateInfo: duplicateProcessing ? {
+          processed: duplicateProcessing.processed,
+          autoMerged: duplicateProcessing.autoMerged || [],
+          possibleDuplicates: duplicateProcessing.possibleDuplicates || [],
+        } : { processed: false },
       }
 
       return [200, 'application/json', JSON.stringify(basicResponse)]
@@ -1340,6 +2243,288 @@ if (Zotero.platformMajorVersion < 102) {
         // Ultimate fallback
         return `zotero://select/library/items/${item.key || 'unknown'}`
       }
+    }
+  }
+
+  /**
+   * Extract PMID from item's extra field
+   * **PHASE 3: PMID extraction utility**
+   * @param item - Zotero item
+   * @returns PMID if found
+   */
+  private _extractPMIDFromExtra(item: any): string | null {
+    try {
+      const extra = item.getField('extra') || ''
+
+      // Look for PMID patterns in extra field
+      const pmidPatterns = [
+        /PMID:\s*(\d+)/i,
+        /PubMed ID:\s*(\d+)/i,
+        /pubmed:\s*(\d+)/i,
+        /pmid\s*(\d+)/i,
+      ]
+
+      for (const pattern of pmidPatterns) {
+        const match = extra.match(pattern)
+        if (match && match[1]) {
+          return match[1]
+        }
+      }
+
+      return null
+    } catch (error) {
+      elogger.error(`Error extracting PMID: ${error.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Extract PMC ID from item's extra field
+   * **PHASE 3: PMC ID extraction utility**
+   * @param item - Zotero item
+   * @returns PMC ID if found
+   */
+  private _extractPMCIDFromExtra(item: any): string | null {
+    try {
+      const extra = item.getField('extra') || ''
+
+      // Look for PMC ID patterns in extra field
+      const pmcPatterns = [
+        /PMC:\s*(PMC\d+)/i,
+        /PMCID:\s*(PMC\d+)/i,
+        /PMC ID:\s*(PMC\d+)/i,
+        /pmc\s*(PMC\d+)/i,
+        /PMC\s*(\d+)/i, // Just the number
+      ]
+
+      for (const pattern of pmcPatterns) {
+        const match = extra.match(pattern)
+        if (match && match[1]) {
+          let pmcId = match[1]
+          // Ensure PMC prefix
+          if (!pmcId.startsWith('PMC')) {
+            pmcId = 'PMC' + pmcId
+          }
+          return pmcId
+        }
+      }
+
+      return null
+    } catch (error) {
+      elogger.error(`Error extracting PMC ID: ${error.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Extract ArXiv ID from item's extra field or URL
+   * **PHASE 3: ArXiv ID extraction utility**
+   * @param item - Zotero item
+   * @returns ArXiv ID if found
+   */
+  private _extractArXivIDFromExtra(item: any): string | null {
+    try {
+      const extra = item.getField('extra') || ''
+      const url = item.getField('url') || ''
+
+      // Look for ArXiv patterns in extra field and URL
+      const arxivPatterns = [
+        /arXiv:\s*([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/i,
+        /arxiv\.org\/(?:abs|pdf)\/([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)/i,
+        /arXiv:\s*([a-z-]+(?:\.[A-Z]{2})?\/[0-9]{7}(?:v[0-9]+)?)/i, // Old format
+      ]
+
+      const textToSearch = extra + ' ' + url
+
+      for (const pattern of arxivPatterns) {
+        const match = textToSearch.match(pattern)
+        if (match && match[1]) {
+          return match[1]
+        }
+      }
+
+      return null
+    } catch (error) {
+      elogger.error(`Error extracting ArXiv ID: ${error.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Normalize URL for comparison
+   * **PHASE 3: URL normalization for duplicate detection**
+   * @param url - URL to normalize
+   * @returns Normalized URL
+   */
+  private _normalizeUrl(url: string): string {
+    try {
+      const urlObj = new URL(url)
+
+      // Remove common tracking parameters
+      const trackingParams = [
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+        'ref', 'referer', 'referrer', 'source', 'fbclid', 'gclid',
+        'msclkid', 'twclid', '_ga', 'mc_cid', 'mc_eid',
+      ]
+
+      trackingParams.forEach(param => {
+        urlObj.searchParams.delete(param)
+      })
+
+      // Normalize domain (remove www, convert to lowercase)
+      let hostname = urlObj.hostname.toLowerCase()
+      if (hostname.startsWith('www.')) {
+        hostname = hostname.substring(4)
+      }
+
+      // Remove trailing slash from pathname
+      let pathname = urlObj.pathname
+      if (pathname.endsWith('/') && pathname.length > 1) {
+        pathname = pathname.slice(0, -1)
+      }
+
+      // Reconstruct normalized URL
+      const normalizedUrl = `${urlObj.protocol}//${hostname}${pathname}${urlObj.search}${urlObj.hash}`
+
+      elogger.info(`URL normalized: ${url} -> ${normalizedUrl}`)
+      return normalizedUrl
+
+    } catch (error) {
+      elogger.error(`Error normalizing URL: ${error.message}`)
+      // Return original URL if normalization fails
+      return url.toLowerCase()
+    }
+  }
+
+  /**
+   * Search for items by extra field content
+   * **PHASE 3: Extra field search utility for PMID, PMC ID, ArXiv ID**
+   * @param fieldType - Type of identifier (PMID, PMC, arXiv)
+   * @param value - Value to search for
+   * @returns Array of items containing the identifier
+   */
+  private async _searchByExtraField(fieldType: string, value: string) {
+    try {
+      // Create search for items containing the identifier in extra field
+      const search = new Zotero.Search()
+      search.addCondition('extra', 'contains', value)
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      // Filter items that actually contain the specific identifier pattern
+      const matchingItems = items.filter(item => {
+        const extra = item.getField('extra') || ''
+
+        switch (fieldType.toLowerCase()) {
+          case 'pmid':
+            return /PMID:\s*(\d+)/i.test(extra) && extra.includes(value)
+          case 'pmc':
+            return /PMC/i.test(extra) && extra.includes(value)
+          case 'arxiv':
+            return /arXiv/i.test(extra) && extra.includes(value)
+          default:
+            return extra.includes(value)
+        }
+      })
+
+      elogger.info(`Found ${matchingItems.length} items with ${fieldType}: ${value}`)
+      return matchingItems.slice(0, 5) // Limit for performance
+
+    } catch (error) {
+      elogger.error(`Error searching by extra field ${fieldType}: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Search for items by normalized URL
+   * **PHASE 3: URL normalization search utility**
+   * @param normalizedUrl - Normalized URL to search for
+   * @param excludeItem - Item to exclude from results
+   * @returns Array of items with matching normalized URLs
+   */
+  private async _searchByNormalizedUrl(normalizedUrl: string, excludeItem: any) {
+    try {
+      // Extract domain for efficient searching
+      const urlObj = new URL(normalizedUrl)
+      const domain = urlObj.hostname
+
+      // Search for items with URLs from the same domain
+      const search = new Zotero.Search()
+      search.addCondition('url', 'contains', domain)
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      // Filter items that have matching normalized URLs
+      const matchingItems = []
+      for (const item of items.slice(0, 10)) { // Limit initial set
+        if (item.key === excludeItem.key) {
+          continue
+        }
+
+        const itemUrl = item.getField('url')
+        if (itemUrl) {
+          const itemNormalizedUrl = this._normalizeUrl(itemUrl)
+          if (itemNormalizedUrl === normalizedUrl) {
+            matchingItems.push(item)
+          }
+        }
+      }
+
+      elogger.info(`Found ${matchingItems.length} items with matching normalized URL: ${normalizedUrl}`)
+      return matchingItems
+
+    } catch (error) {
+      elogger.error(`Error searching by normalized URL: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Remove duplicate candidates (same item found through different identifiers)
+   * **PHASE 3: Candidate deduplication utility**
+   * @param candidates - Array of duplicate candidates
+   * @returns Deduplicated array with best match for each item
+   */
+  private _deduplicateCandidates(candidates: any[]) {
+    try {
+      const itemMap = new Map()
+
+      for (const candidate of candidates) {
+        const itemKey = candidate.item.key
+
+        if (!itemMap.has(itemKey)) {
+          // First occurrence of this item
+          itemMap.set(itemKey, candidate)
+        } else {
+          // Item already exists, keep the one with higher score
+          const existing = itemMap.get(itemKey)
+          if (candidate.score > existing.score) {
+            // Update with higher confidence match
+            candidate.reason = `${existing.reason} + ${candidate.reason}`
+            itemMap.set(itemKey, candidate)
+          } else {
+            // Enhance reason of existing higher-scoring match
+            existing.reason = `${existing.reason} + ${candidate.reason}`
+            itemMap.set(itemKey, existing)
+          }
+        }
+      }
+
+      const uniqueCandidates = Array.from(itemMap.values())
+      elogger.info(`Deduplicated ${candidates.length} candidates to ${uniqueCandidates.length} unique items`)
+
+      return uniqueCandidates
+
+    } catch (error) {
+      elogger.error(`Error deduplicating candidates: ${error.message}`)
+      return candidates // Return original array if deduplication fails
     }
   }
 }
