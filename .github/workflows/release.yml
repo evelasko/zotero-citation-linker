@@ -28,6 +28,11 @@ on:
         required: false
         default: false
 
+# Grant necessary permissions for creating releases
+permissions:
+  contents: write
+  packages: write
+
 env:
   NODE_VERSION: '18'
   PLUGIN_NAME: 'zotero-citation-linker'
