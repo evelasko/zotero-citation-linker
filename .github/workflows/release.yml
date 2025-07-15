@@ -115,16 +115,23 @@ jobs:
     - name: 📝 Update version in files
       run: |
         VERSION="${{ needs.validate.outputs.version }}"
+        CURRENT_VERSION=$(node -p "require('./package.json').version")
         
-        # Update package.json version
-        npm version $VERSION --no-git-tag-version
-        
-        # Update manifest.json version if it exists
-        if [ -f "manifest.json" ]; then
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.json
+        if [ "$CURRENT_VERSION" != "$VERSION" ]; then
+          echo "📝 Updating version from $CURRENT_VERSION to $VERSION"
+          
+          # Update package.json version
+          npm version $VERSION --no-git-tag-version
+          
+          # Update manifest.json version if it exists
+          if [ -f "manifest.json" ]; then
+            sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.json
+          fi
+          
+          echo "✅ Updated version to $VERSION in project files"
+        else
+          echo "✅ Version is already $VERSION, skipping update"
         fi
-        
-        echo "✅ Updated version to $VERSION in project files"
     
     - name: 🔨 Build plugin
       run: npm run build
