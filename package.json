@@ -1,61 +1,70 @@
 {
-    "name": "zotero-citation-linker",
-    "version": "1.1.0",
-    "description": "A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.",
-    "type": "module",
-    "scripts": {
-        "lint": "eslint .",
-        "prebuild": "npm run lint",
-        "build": "tsc --noEmit && node esbuild.js && cp manifest.json build/",
-        "postbuild": "zotero-plugin-zipup build zotero-citation-linker",
-        "release": "zotero-plugin-release",
-        "postversion": "git push --follow-tags",
-        "start": "osascript -e 'quit app \"Zotero\"' && zotero-start"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/evelasko/zotero-citation-linker.git"
-    },
-    "author": {
-        "name": "Enrique Velasco",
-        "email": "h.superpotter@gmail.com"
-    },
-    "keywords": [
-        "zotero",
-        "plugin",
-        "citation",
-        "markdown",
-        "api",
-        "http-server",
-        "inline-citations",
-        "reference-management",
-        "workflow",
-        "automation"
-    ],
-    "license": "MIT",
-    "dependencies": {
-        "zotero-plugin-toolkit": "^5.0.1"
-    },
-    "devDependencies": {
-        "@typescript-eslint/eslint-plugin": "^8.26.1",
-        "@typescript-eslint/parser": "^8.26.1",
-        "esbuild": "^0.25.1",
-        "eslint": "^9.22.0",
-        "eslint-plugin-import": "^2.31.0",
-        "eslint-plugin-jsdoc": "^50.6.6",
-        "eslint-plugin-prefer-arrow": "^1.2.3",
-        "mkdirp": "^3.0.1",
-        "npm-run-all": "^4.1.5",
-        "rimraf": "^6.0.1",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.8.2",
-        "zotero-plugin": "^5.0.13",
-        "zotero-types": "^4.0.5"
-    },
-    "xpi": {
-        "name": "Zotero Citation Linker",
-        "updateLink": "https://github.com/username/zotero-citation-linker/releases/download/v{version}/zotero-citation-linker-{version}.xpi",
-        "releaseURL": "https://github.com/username/zotero-citation-linker/releases/download/release/",
-        "bootstrapped": true
-    }
+  "name": "zotero-citation-linker",
+  "version": "1.1.1",
+  "description": "A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "prebuild": "npm run lint",
+    "build": "tsc --noEmit && node esbuild.js && cp manifest.json build/",
+    "postbuild": "zotero-plugin-zipup build zotero-citation-linker",
+    "release": "zotero-plugin-release",
+    "postversion": "git push --follow-tags",
+    "start": "osascript -e 'quit app \"Zotero\"' && zotero-start",
+    "version:patch": "node scripts/version-bump.js patch",
+    "version:minor": "node scripts/version-bump.js minor",
+    "version:major": "node scripts/version-bump.js major",
+    "version:set": "node scripts/version-bump.js",
+    "release:patch": "npm run version:patch && npm run build && git add . && git commit -m \"chore: release patch version\" && git push",
+    "release:minor": "npm run version:minor && npm run build && git add . && git commit -m \"chore: release minor version\" && git push",
+    "release:major": "npm run version:major && npm run build && git add . && git commit -m \"chore: release major version\" && git push",
+    "ci:validate": "npm run lint && npm run build",
+    "clean": "rimraf build/ xpi/ gen/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/evelasko/zotero-citation-linker.git"
+  },
+  "author": {
+    "name": "Enrique Velasco",
+    "email": "h.superpotter@gmail.com"
+  },
+  "keywords": [
+    "zotero",
+    "plugin",
+    "citation",
+    "markdown",
+    "api",
+    "http-server",
+    "inline-citations",
+    "reference-management",
+    "workflow",
+    "automation"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zotero-plugin-toolkit": "^5.0.1"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "esbuild": "^0.25.1",
+    "eslint": "^9.22.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-jsdoc": "^50.6.6",
+    "eslint-plugin-prefer-arrow": "^1.2.3",
+    "mkdirp": "^3.0.1",
+    "npm-run-all": "^4.1.5",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2",
+    "zotero-plugin": "^5.0.21",
+    "zotero-types": "^4.0.5"
+  },
+  "xpi": {
+    "name": "Zotero Citation Linker",
+    "updateLink": "https://github.com/username/zotero-citation-linker/releases/download/v{version}/zotero-citation-linker-{version}.xpi",
+    "releaseURL": "https://github.com/username/zotero-citation-linker/releases/download/release/",
+    "bootstrapped": true
+  }
 }

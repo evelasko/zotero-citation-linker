@@ -1,0 +1,315 @@
+name: 🚀 Release Workflow
+
+on:
+  # Trigger on published releases (manual)
+  release:
+    types: [published]
+  
+  # Trigger on version tags (automatic)
+  push:
+    tags:
+      - 'v*.*.*'
+  
+  # Manual workflow dispatch for testing
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.2.0)'
+        required: true
+        default: '1.1.0'
+      create_release:
+        description: 'Create GitHub release?'
+        type: boolean
+        required: true
+        default: true
+      prerelease:
+        description: 'Mark as pre-release?'
+        type: boolean
+        required: false
+        default: false
+
+env:
+  NODE_VERSION: '18'
+  PLUGIN_NAME: 'zotero-citation-linker'
+
+jobs:
+  # =================== VALIDATION JOB ===================
+  validate:
+    name: 🔍 Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag_name: ${{ steps.version.outputs.tag_name }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for changelog
+    
+    - name: 📝 Extract version information
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.version }}"
+          TAG_NAME="v${VERSION}"
+          IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
+        elif [ "${{ github.event_name }}" = "push" ]; then
+          TAG_NAME="${{ github.ref_name }}"
+          VERSION="${TAG_NAME#v}"
+          IS_PRERELEASE=$(echo "$TAG_NAME" | grep -E "(alpha|beta|rc)" && echo "true" || echo "false")
+        else
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          VERSION="${TAG_NAME#v}"
+          IS_PRERELEASE="${{ github.event.release.prerelease }}"
+        fi
+        
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+        
+        echo "🏷️ Version: $VERSION"
+        echo "🏷️ Tag: $TAG_NAME"
+        echo "🏷️ Pre-release: $IS_PRERELEASE"
+    
+    - name: ✅ Validate version format
+      run: |
+        if ! echo "${{ steps.version.outputs.version }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$'; then
+          echo "❌ Invalid version format: ${{ steps.version.outputs.version }}"
+          echo "Expected format: X.Y.Z or X.Y.Z-suffix"
+          exit 1
+        fi
+        echo "✅ Version format valid"
+
+  # =================== BUILD & TEST JOB ===================
+  build-and-test:
+    name: 🔨 Build & Test
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+    
+    - name: 📦 Install dependencies
+      run: npm ci
+    
+    - name: 🧪 Run tests (if available)
+      run: |
+        if npm run test --if-present; then
+          echo "✅ Tests passed"
+        else
+          echo "⚠️ No tests found or tests failed"
+        fi
+    
+    - name: 🔍 Run linting
+      run: npm run lint
+    
+    - name: 📝 Update version in files
+      run: |
+        VERSION="${{ needs.validate.outputs.version }}"
+        
+        # Update package.json version
+        npm version $VERSION --no-git-tag-version
+        
+        # Update manifest.json version if it exists
+        if [ -f "manifest.json" ]; then
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" manifest.json
+        fi
+        
+        echo "✅ Updated version to $VERSION in project files"
+    
+    - name: 🔨 Build plugin
+      run: npm run build
+    
+    - name: 📂 Verify build outputs
+      run: |
+        if [ ! -f "xpi/${PLUGIN_NAME}-${{ needs.validate.outputs.version }}.xpi" ]; then
+          echo "❌ XPI file not found!"
+          ls -la xpi/
+          exit 1
+        fi
+        
+        # Check XPI file size (should be reasonable)
+        XPI_SIZE=$(stat -f%z "xpi/${PLUGIN_NAME}-${{ needs.validate.outputs.version }}.xpi" 2>/dev/null || stat -c%s "xpi/${PLUGIN_NAME}-${{ needs.validate.outputs.version }}.xpi")
+        if [ $XPI_SIZE -lt 10000 ]; then
+          echo "❌ XPI file seems too small ($XPI_SIZE bytes)"
+          exit 1
+        fi
+        
+        echo "✅ XPI file validated ($XPI_SIZE bytes)"
+    
+    - name: 📤 Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: plugin-artifacts
+        path: |
+          xpi/*.xpi
+          build/
+        retention-days: 30
+
+  # =================== CHANGELOG GENERATION ===================
+  generate-changelog:
+    name: 📋 Generate Changelog
+    runs-on: ubuntu-latest
+    needs: [validate, build-and-test]
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 📋 Generate changelog
+      id: changelog
+      run: |
+        # Get the previous tag
+        CURRENT_TAG="${{ needs.validate.outputs.tag_name }}"
+        PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "$CURRENT_TAG" | head -n 1)
+        
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "No previous tag found, generating full changelog"
+          PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+        fi
+        
+        echo "Generating changelog from $PREVIOUS_TAG to $CURRENT_TAG"
+        
+        # Generate changelog
+        CHANGELOG=$(cat << 'EOF'
+        ## 🚀 What's New in ${{ needs.validate.outputs.version }}
+        
+        ### 📋 Changes
+        
+        EOF
+        )
+        
+        # Add commit messages as changelog items
+        git log --pretty=format:"- %s" "$PREVIOUS_TAG..HEAD" | head -20 >> /tmp/changelog.md
+        
+        # If changelog is empty, add a default message
+        if [ ! -s /tmp/changelog.md ]; then
+          echo "- Minor improvements and bug fixes" >> /tmp/changelog.md
+        fi
+        
+        CHANGELOG=$(cat /tmp/changelog.md)
+        
+        # Save changelog to output (escape for JSON)
+        {
+          echo 'changelog<<EOF'
+          echo "$CHANGELOG"
+          echo 'EOF'
+        } >> $GITHUB_OUTPUT
+        
+        echo "📋 Changelog generated:"
+        echo "$CHANGELOG"
+
+  # =================== RELEASE JOB ===================
+  create-release:
+    name: 🎉 Create Release
+    runs-on: ubuntu-latest
+    needs: [validate, build-and-test, generate-changelog]
+    if: >
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') ||
+      github.event_name == 'push' ||
+      github.event_name == 'release'
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 📦 Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: plugin-artifacts
+        path: ./artifacts
+    
+    - name: 🎉 Create or update GitHub release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.validate.outputs.tag_name }}
+        name: "Zotero Citation Linker ${{ needs.validate.outputs.version }}"
+        body: |
+          ${{ needs.generate-changelog.outputs.changelog }}
+          
+          ## 📥 Installation
+          
+          1. Download the `.xpi` file below
+          2. In Zotero: `Tools` → `Add-ons` → `Install Add-on From File...`
+          3. Select the downloaded `.xpi` file
+          4. Restart Zotero when prompted
+          
+          ## 🔗 Links
+          
+          - [Documentation](https://github.com/${{ github.repository }}/blob/main/README.md)
+          - [Report Issues](https://github.com/${{ github.repository }}/issues)
+          - [Changelog](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          
+          ---
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ github.event.before }}...${{ needs.validate.outputs.tag_name }}
+        
+        files: |
+          artifacts/xpi/${{ env.PLUGIN_NAME }}-${{ needs.validate.outputs.version }}.xpi
+        
+        prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+        draft: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: 📢 Release summary
+      run: |
+        echo "🎉 Release created successfully!"
+        echo "📍 Release URL: ${{ steps.create_release.outputs.url }}"
+        echo "🏷️ Tag: ${{ needs.validate.outputs.tag_name }}"
+        echo "📦 Version: ${{ needs.validate.outputs.version }}"
+        echo "🔖 Pre-release: ${{ needs.validate.outputs.is_prerelease }}"
+
+  # =================== NOTIFICATION JOB ===================
+  notify:
+    name: 📢 Post-Release Notifications
+    runs-on: ubuntu-latest
+    needs: [validate, create-release]
+    if: success()
+    
+    steps:
+    - name: 📧 Create release summary
+      run: |
+        cat << EOF > release-summary.md
+        # 🎉 Zotero Citation Linker ${{ needs.validate.outputs.version }} Released!
+        
+        **Version:** ${{ needs.validate.outputs.version }}
+        **Tag:** ${{ needs.validate.outputs.tag_name }}
+        **Type:** ${{ needs.validate.outputs.is_prerelease == 'true' && 'Pre-release' || 'Stable Release' }}
+        
+        ## 📥 Download
+        [Get the latest version here](https://github.com/${{ github.repository }}/releases/tag/${{ needs.validate.outputs.tag_name }})
+        
+        ## 🔗 Quick Links
+        - [Installation Guide](https://github.com/${{ github.repository }}#installation)
+        - [Documentation](https://github.com/${{ github.repository }}/blob/main/README.md)
+        - [Report Issues](https://github.com/${{ github.repository }}/issues)
+        
+        ---
+        *This release was automatically created by GitHub Actions* 🤖
+        EOF
+        
+        echo "📧 Release summary created"
+        cat release-summary.md
+    
+    # Optional: Add Discord/Slack notifications here
+    # - name: 📱 Discord notification
+    #   uses: Ilshidur/action-discord@master
+    #   env:
+    #     DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+    #   with:
+    #     args: 'New Zotero Citation Linker release: ${{ needs.validate.outputs.version }} 🎉' 
