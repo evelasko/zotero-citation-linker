@@ -2521,45 +2521,34 @@ if (Zotero.platformMajorVersion < 102) {
    */
   private _generateApiUrl(item: any): string {
     try {
-      // Use Zotero's built-in URI generation method
-      // This automatically handles user vs group libraries, user IDs, etc.
-      const apiUrl = Zotero.URI.getItemURI(item)
+      const library = item.library
+      const itemKey = item.key
 
-      elogger.info(`Generated API URL using Zotero.URI.getItemURI(): ${apiUrl}`)
-      return apiUrl
-
-    } catch (error) {
-      elogger.error(`Error using Zotero.URI.getItemURI() for item ${item.key}: ${error}`)
-
-      try {
-        // Fallback to manual construction if Zotero.URI.getItemURI() fails
-        const library = item.library
-        const itemKey = item.key
-
-        // Check if this is a group library
-        if ((library as any).type === 'group') {
-          const fallbackUrl = `https://api.zotero.org/groups/${(library as any).id}/items/${itemKey}`
-          elogger.info(`Using fallback group URL: ${fallbackUrl}`)
+      // Check if this is a group library
+      if ((library as any).type === 'group') {
+        const fallbackUrl = `https://api.zotero.org/groups/${(library as any).id}/items/${itemKey}`
+        elogger.info(`Using fallback group URL: ${fallbackUrl}`)
+        return fallbackUrl
+      } else {
+        // For user libraries, use Zotero.Users.getCurrentUserID()
+        const userID = Zotero.Users.getCurrentUserID()
+        if (userID) {
+          const fallbackUrl = `https://api.zotero.org/users/${userID}/items/${itemKey}`
+          elogger.info(`Using fallback user URL: ${fallbackUrl}`)
           return fallbackUrl
         } else {
-          // For user libraries, use Zotero.Users.getCurrentUserID()
-          const userID = Zotero.Users.getCurrentUserID()
-          if (userID) {
-            const fallbackUrl = `https://api.zotero.org/users/${userID}/items/${itemKey}`
-            elogger.info(`Using fallback user URL: ${fallbackUrl}`)
-            return fallbackUrl
-          } else {
-            // Ultimate fallback if no user ID available (offline mode)
-            const localUrl = `zotero://select/library/items/${itemKey}`
-            elogger.info(`Using local fallback URL: ${localUrl}`)
-            return localUrl
-          }
+          // Ultimate fallback if no user ID available (offline mode)
+          const localUrl = Zotero.URI.getItemURI(item) ||`zotero://select/library/items/${itemKey}`
+          elogger.info(`Using local fallback URL: ${localUrl}`)
+          return localUrl
         }
-      } catch (fallbackError) {
-        elogger.error(`Fallback API URL generation also failed: ${fallbackError}`)
-        // Ultimate fallback
-        return `zotero://select/library/items/${item.key || 'unknown'}`
       }
+    } catch (fallbackError) {
+      elogger.error(`Fallback API URL generation also failed: ${fallbackError}`)
+      // Ultimate fallback
+      const apiUrl = Zotero.URI.getItemURI(item)
+      elogger.info(`Generated API URL using Zotero.URI.getItemURI(): ${apiUrl}`)
+      return apiUrl
     }
   }
 
