@@ -335,16 +335,16 @@ if (Zotero.platformMajorVersion < 102) {
      }
    }
 
-   /**
-    * Register the processurl endpoint
-    */
-   private registerProcessUrlEndpoint() {
-     const self = this
+     /**
+   * Register the processurl endpoint
+   */
+  private registerProcessUrlEndpoint() {
+    const self = this
 
-     // Define the endpoint constructor
-     const ProcessUrlEndpoint = function() {}
+    // Define the endpoint constructor
+    const ProcessUrlEndpoint = function() {}
 
-     ProcessUrlEndpoint.prototype = {
+    ProcessUrlEndpoint.prototype = {
       supportedMethods: ['POST'],
       supportedDataTypes: ['application/json'],
 
@@ -392,6 +392,9 @@ if (Zotero.platformMajorVersion < 102) {
 
     // Register the separate webpage save endpoint
     this.registerSaveWebpageEndpoint()
+
+    // Register the item key lookup endpoint
+    this.registerItemKeyByUrlEndpoint()
   }
 
   /**
@@ -450,6 +453,84 @@ if (Zotero.platformMajorVersion < 102) {
   }
 
   /**
+   * Register the item key lookup endpoint for checking existing URLs
+   */
+  private registerItemKeyByUrlEndpoint() {
+    const self = this
+
+    const ItemKeyByUrlEndpoint = function() {}
+    ItemKeyByUrlEndpoint.prototype = {
+      supportedMethods: ['GET'],
+      supportedDataTypes: [],
+
+      init: async function(requestData: any) {
+        elogger.info('ItemKeyByUrl endpoint called')
+
+        try {
+          // Extract URL from query parameters for GET request
+          let url: string
+          if (requestData.query && requestData.query.url) {
+            url = requestData.query.url
+          } else if (requestData.searchParams && requestData.searchParams.get) {
+            url = requestData.searchParams.get('url')
+          } else if (requestData.url) {
+            // Parse URL manually if needed
+            const urlObj = new URL(requestData.url, 'http://localhost')
+            url = urlObj.searchParams.get('url')
+          } else {
+            return self._itemKeyByUrlErrorResponse(400, 'URL parameter is required')
+          }
+
+          if (!url || typeof url !== 'string') {
+            return self._itemKeyByUrlErrorResponse(400, 'URL parameter must be a non-empty string')
+          }
+
+          elogger.info(`Looking up items by URL: ${url}`)
+
+          // Validate URL format
+          try {
+            const urlObj = Components.classes['@mozilla.org/network/io-service;1']
+              .getService(Components.interfaces.nsIIOService)
+              .newURI(url)
+            if (!['http:', 'https:'].includes(urlObj.scheme + ':')) {
+              return self._itemKeyByUrlErrorResponse(400, 'Only HTTP and HTTPS URLs are supported')
+            }
+          } catch (e) {
+            return self._itemKeyByUrlErrorResponse(400, `Invalid URL format: ${e.message}`)
+          }
+
+          // Search for items with matching URL
+          const matchingItems = await self._findItemsByUrl(url)
+
+          // Extract item keys
+          const itemKeys = matchingItems.map(item => item.key)
+
+          elogger.info(`Found ${itemKeys.length} items with URL: ${url}`)
+
+          // Return success response
+                     const response = {
+             status: 'success',
+             items: itemKeys,
+             count: itemKeys.length,
+             url: url,
+             timestamp: new Date().toISOString(),
+           }
+
+          return [200, 'application/json', JSON.stringify(response)]
+
+        } catch (error) {
+          elogger.error(`Error in ItemKeyByUrl endpoint: ${error.message}`)
+          return self._itemKeyByUrlErrorResponse(500, `Internal server error: ${error.message}`)
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/itemkeybyurl'] = ItemKeyByUrlEndpoint
+    elogger.info('Registered /citationlinker/itemkeybyurl endpoint')
+  }
+
+  /**
    * Cleanup the API server
    */
   private cleanupApiServer() {
@@ -459,7 +540,8 @@ if (Zotero.platformMajorVersion < 102) {
       // Remove our endpoints
       delete Zotero.Server.Endpoints['/citationlinker/processurl']
       delete Zotero.Server.Endpoints['/citationlinker/savewebpage']
-      elogger.info('Removed /citationlinker/processurl and /citationlinker/savewebpage endpoints')
+      delete Zotero.Server.Endpoints['/citationlinker/itemkeybyurl']
+      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, and /citationlinker/itemkeybyurl endpoints')
     } catch (error) {
       elogger.error(`Error cleaning up API endpoints: ${error}`)
     }
@@ -2526,5 +2608,93 @@ if (Zotero.platformMajorVersion < 102) {
       elogger.error(`Error deduplicating candidates: ${error.message}`)
       return candidates // Return original array if deduplication fails
     }
+  }
+
+  /**
+   * Find items in the library that have the specified URL
+   * @param url - URL to search for
+   * @returns Array of items with matching URL
+   */
+  private async _findItemsByUrl(url: string) {
+    try {
+      elogger.info(`Searching for items with URL: ${url}`)
+
+      // Use Zotero's search API to find items by URL
+      const search = new Zotero.Search()
+      search.addCondition('url', 'is', url)
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      elogger.info(`Found ${items.length} items with exact URL match`)
+
+      // Also search for items that might have the URL with slight variations
+      // (e.g., with/without trailing slash, http vs https)
+      if (items.length === 0) {
+        elogger.info('No exact matches found, trying fuzzy URL matching')
+
+        const fuzzySearch = new Zotero.Search()
+        fuzzySearch.addCondition('url', 'contains', this._extractUrlDomain(url))
+        fuzzySearch.addCondition('itemType', 'isNot', 'attachment')
+        fuzzySearch.addCondition('itemType', 'isNot', 'note')
+
+        const fuzzyItemIDs = await fuzzySearch.search()
+        const fuzzyItems = await Zotero.Items.getAsync(fuzzyItemIDs)
+
+        // Filter fuzzy results to find actual matches
+        const normalizedUrl = this._normalizeUrl(url)
+        const actualMatches = fuzzyItems.filter(item => {
+          const itemUrl = item.getField('url')
+          if (!itemUrl) return false
+          return this._normalizeUrl(itemUrl) === normalizedUrl
+        })
+
+        elogger.info(`Found ${actualMatches.length} items with normalized URL match`)
+        return actualMatches
+      }
+
+      return items
+
+    } catch (error) {
+      elogger.error(`Error searching for items by URL: ${error.message}`)
+      return []
+    }
+  }
+
+  /**
+   * Extract domain from URL for fuzzy searching
+   * @param url - URL to extract domain from
+   * @returns Domain string
+   */
+  private _extractUrlDomain(url: string): string {
+    try {
+      const urlObj = new URL(url)
+      return urlObj.hostname
+    } catch (error) {
+      elogger.error(`Error extracting domain from URL: ${error.message}`)
+      return url
+    }
+  }
+
+  /**
+   * Generate error response for item key by URL endpoint
+   * @param statusCode - HTTP status code
+   * @param message - Error message
+   * @returns Error response array
+   */
+  private _itemKeyByUrlErrorResponse(statusCode: number, message: string) {
+    const response = {
+      status: 'error',
+      error: message,
+      items: [],
+      count: 0,
+      timestamp: new Date().toISOString(),
+    }
+
+    elogger.error(`ItemKeyByUrl Error ${statusCode}: ${message}`)
+
+    return [statusCode, 'application/json', JSON.stringify(response)]
   }
 }
