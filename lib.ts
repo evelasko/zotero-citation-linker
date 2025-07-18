@@ -395,6 +395,138 @@ if (Zotero.platformMajorVersion < 102) {
 
     // Register the item key lookup endpoint
     this.registerItemKeyByUrlEndpoint()
+
+    // Register the identifier detection endpoint
+    this.registerDetectIdentifierEndpoint()
+
+    // Register the identifier processing endpoint
+    this.registerProcessIdentifierEndpoint()
+  }
+
+  /**
+   * Register the identifier processing endpoint for translating identifiers
+   */
+  private registerProcessIdentifierEndpoint() {
+    const self = this
+
+    const ProcessIdentifierEndpoint = function() {}
+    ProcessIdentifierEndpoint.prototype = {
+      supportedMethods: ['POST'],
+      supportedDataTypes: ['application/json'],
+
+      init: async function(requestData) {
+        try {
+          // Validate request data
+          const validationResult = self._validateRequest(requestData)
+          if (!validationResult.valid) {
+            return self._errorResponse(400, validationResult.error)
+          }
+
+          const { identifier } = requestData.data
+          elogger.info(`Processing identifier: ${identifier}`)
+
+          // Check if library is editable
+          const { library } = (Zotero.Server as any).Connector.getSaveTarget()
+          if (!library.editable) {
+            return self._errorResponse(500, 'Target library is not editable')
+          }
+
+          // Attempt to translate the identifier
+          const translationResult = await self._attemptIdentifierTranslation(identifier)
+
+          if (translationResult.success) {
+            // Translation successful - items are already saved by the translation system
+            elogger.info(`Identifier translation successful - using ${translationResult.items.length} already-saved items`)
+            return await self._successResponse(translationResult.items, 'identifier_translation', translationResult.translator, translationResult.duplicateProcessing)
+          } else {
+            // Translation failed - return error without fallback
+            elogger.info(`Identifier translation failed: ${translationResult.reason}`)
+            return self._errorResponse(422, `Identifier translation failed: ${translationResult.reason}`)
+          }
+
+        } catch (error) {
+          Zotero.logError(new Error(`CitationLinker identifier error: ${error.message}`))
+          Zotero.logError(error)
+          return self._errorResponse(500, `Internal server error: ${error.message}`)
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/processidentifier'] = ProcessIdentifierEndpoint
+    elogger.info('Registered /citationlinker/processidentifier endpoint')
+  }
+
+  /**
+   * Register the identifier detection endpoint for checking available translators
+   */
+  private registerDetectIdentifierEndpoint() {
+    const self = this
+
+    const DetectIdentifierEndpoint = function() {}
+    DetectIdentifierEndpoint.prototype = {
+      supportedMethods: ['GET'],
+      supportedDataTypes: [],
+
+      init: async function(requestData: any) {
+        elogger.info('DetectIdentifier endpoint called')
+
+        try {
+          // Extract identifier from query parameters for GET request
+          let identifier: string
+          if (requestData.query && requestData.query.identifier) {
+            identifier = requestData.query.identifier
+          } else if (requestData.searchParams && requestData.searchParams.get) {
+            identifier = requestData.searchParams.get('identifier')
+          } else if (requestData.url) {
+            // Parse URL manually if needed
+            const urlObj = new URL(requestData.url, 'http://localhost')
+            identifier = urlObj.searchParams.get('identifier')
+          } else {
+            return self._detectIdentifierErrorResponse(400, 'Identifier parameter is required')
+          }
+
+          if (!identifier || typeof identifier !== 'string') {
+            return self._detectIdentifierErrorResponse(400, 'Identifier parameter must be a non-empty string')
+          }
+
+          elogger.info(`Detecting translators for identifier: ${identifier}`)
+
+          // Create a new Zotero.Translate.Search instance
+          const search = new Zotero.Translate.Search()
+          const extractedIdentifiers = Zotero.Utilities.extractIdentifiers(identifier)
+          if (extractedIdentifiers.length === 0) {
+            return self._detectIdentifierErrorResponse(400, 'No valid identifiers found in the input')
+          }
+          elogger.info(`!!!Extracted identifiers: ${JSON.stringify(extractedIdentifiers)}`)
+          search.setIdentifier(extractedIdentifiers[0])
+
+          // Get available translators
+          const translators = await search.getTranslators()
+
+          elogger.info(`Found ${translators.length} translators for identifier: ${identifier}`)
+
+          // Return success response
+          const response = {
+            status: 'success',
+            translators: translators,
+            count: translators.length,
+            identifier: identifier,
+            timestamp: new Date().toISOString(),
+          }
+
+          return [200, 'application/json', JSON.stringify(response)]
+
+        } catch (error) {
+          elogger.error(`Error in DetectIdentifier endpoint: ${error.message}`)
+          return self._detectIdentifierErrorResponse(500, `Internal server error: ${error.message}`)
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/detectidentifier'] = DetectIdentifierEndpoint
+    elogger.info('Registered /citationlinker/detectidentifier endpoint')
   }
 
   /**
@@ -541,7 +673,9 @@ if (Zotero.platformMajorVersion < 102) {
       delete Zotero.Server.Endpoints['/citationlinker/processurl']
       delete Zotero.Server.Endpoints['/citationlinker/savewebpage']
       delete Zotero.Server.Endpoints['/citationlinker/itemkeybyurl']
-      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, and /citationlinker/itemkeybyurl endpoints')
+      delete Zotero.Server.Endpoints['/citationlinker/detectidentifier']
+      delete Zotero.Server.Endpoints['/citationlinker/processidentifier']
+      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, /citationlinker/itemkeybyurl, /citationlinker/detectidentifier, and /citationlinker/processidentifier endpoints')
     } catch (error) {
       elogger.error(`Error cleaning up API endpoints: ${error}`)
     }
@@ -794,27 +928,42 @@ if (Zotero.platformMajorVersion < 102) {
       return { valid: false, error: 'No data provided' }
     }
 
-    if (!requestData.data.url) {
-      return { valid: false, error: 'URL is required' }
-    }
-
-    if (typeof requestData.data.url !== 'string') {
-      return { valid: false, error: 'URL must be a string' }
-    }
-
-    // Validate URL format
-    try {
-      const url = Components.classes['@mozilla.org/network/io-service;1']
-        .getService(Components.interfaces.nsIIOService)
-        .newURI(requestData.data.url)
-      if (!['http:', 'https:'].includes(url.scheme + ':')) {
-        return { valid: false, error: 'Only HTTP and HTTPS URLs are supported' }
+    // Check if this is a URL-based request
+    if (requestData.data.url) {
+      if (typeof requestData.data.url !== 'string') {
+        return { valid: false, error: 'URL must be a string' }
       }
-    } catch (e) {
-      return { valid: false, error: `Invalid URL format: ${e.message}` }
+
+      // Validate URL format
+      try {
+        const url = Components.classes['@mozilla.org/network/io-service;1']
+          .getService(Components.interfaces.nsIIOService)
+          .newURI(requestData.data.url)
+        if (!['http:', 'https:'].includes(url.scheme + ':')) {
+          return { valid: false, error: 'Only HTTP and HTTPS URLs are supported' }
+        }
+      } catch (e) {
+        return { valid: false, error: `Invalid URL format: ${e.message}` }
+      }
+
+      return { valid: true }
     }
 
-    return { valid: true }
+    // Check if this is an identifier-based request
+    if (requestData.data.identifier) {
+      if (typeof requestData.data.identifier !== 'string') {
+        return { valid: false, error: 'Identifier must be a string' }
+      }
+
+      if (!requestData.data.identifier.trim()) {
+        return { valid: false, error: 'Identifier cannot be empty' }
+      }
+
+      return { valid: true }
+    }
+
+    // Neither URL nor identifier provided
+    return { valid: false, error: 'Either URL or identifier is required' }
   }
 
   // =================== DUPLICATE DETECTION INFRASTRUCTURE ===================
@@ -1783,6 +1932,92 @@ if (Zotero.platformMajorVersion < 102) {
   }
 
   /**
+   * Attempt to translate an identifier using Zotero's translation system
+   * **PHASE 4: Identifier-based translation using Zotero.Translate.Search**
+   */
+  private async _attemptIdentifierTranslation(identifier: string) {
+    try {
+      elogger.info(`Starting identifier translation attempt for: ${identifier}`)
+
+      // Extract identifiers using Zotero's utility function
+      const extractedIdentifiers = Zotero.Utilities.extractIdentifiers(identifier)
+      if (extractedIdentifiers.length === 0) {
+        elogger.info('No valid identifiers found in the input')
+        return { success: false, reason: 'No valid identifiers found in the input' }
+      }
+
+      elogger.info(`Extracted identifiers: ${JSON.stringify(extractedIdentifiers)}`)
+
+      // Create a new Zotero.Translate.Search instance
+      const search = new Zotero.Translate.Search()
+      search.setIdentifier(extractedIdentifiers[0])
+
+      elogger.info('Search translation object created and configured')
+
+      // Get available translators
+      const translators = await search.getTranslators()
+      elogger.info(`Found ${translators.length} translators for this identifier`)
+
+      if (translators.length === 0) {
+        elogger.info('No translators found for this identifier')
+        return { success: false, reason: 'No translators found for this identifier' }
+      }
+
+      // Log available translators for debugging
+      translators.forEach((translator, index) => {
+        elogger.info(`Translator ${index + 1}: ${translator.label} (priority: ${translator.priority})`)
+      })
+
+      // Use the first (highest priority) translator
+      const translator = translators[0]
+      search.setTranslator(translator)
+      elogger.info(`Using translator: ${translator.label} with priority ${translator.priority}`)
+
+      // Execute the translation
+      const items = await search.translate()
+
+      elogger.info(`Identifier translation completed: ${items ? items.length : 0} items created`)
+
+      // Convert items to proper format if they exist
+      if (items && items.length > 0) {
+        // **INTEGRITY FIX: Process duplicates BEFORE formatting to ensure correct item data**
+        elogger.info('Starting duplicate detection for translated items')
+        const duplicateResults = await this._processDuplicates(items)
+
+        // **NOW format the final items (after duplicate processing may have replaced some)**
+        const formattedItems = items.map((item: any) => {
+          const jsonItem = item.toJSON()
+          jsonItem.key = item.key
+          jsonItem.version = item.version
+          jsonItem.itemID = item.id
+
+          elogger.info(`Formatted final item: ${jsonItem.title || 'No title'} (${jsonItem.itemType}) - Key: ${jsonItem.key}`)
+          return jsonItem
+        })
+
+        elogger.info(`Identifier translation successful: ${formattedItems.length} items formatted, duplicate processing completed`)
+        return {
+          success: true,
+          items: formattedItems,
+          translator: translator.label,
+          duplicateProcessing: duplicateResults,
+        }
+      }
+
+      // **FIX: If no items produced, return failure**
+      elogger.info('Identifier translation completed but produced no items')
+      return { success: false, reason: 'Identifier translation completed but produced no items' }
+
+    } catch (error) {
+      elogger.error(`Identifier translation error: ${error.message}`)
+      return {
+        success: false,
+        reason: error.message,
+      }
+    }
+  }
+
+    /**
    * Save translated items to the library
    */
   private async _saveTranslatedItems(url: string, items: any[]) {
@@ -2694,6 +2929,26 @@ if (Zotero.platformMajorVersion < 102) {
     }
 
     elogger.error(`ItemKeyByUrl Error ${statusCode}: ${message}`)
+
+    return [statusCode, 'application/json', JSON.stringify(response)]
+  }
+
+  /**
+   * Generate error response for detect identifier endpoint
+   * @param statusCode - HTTP status code
+   * @param message - Error message
+   * @returns Error response array
+   */
+  private _detectIdentifierErrorResponse(statusCode: number, message: string) {
+    const response = {
+      status: 'error',
+      error: message,
+      translators: [],
+      count: 0,
+      timestamp: new Date().toISOString(),
+    }
+
+    elogger.error(`DetectIdentifier Error ${statusCode}: ${message}`)
 
     return [statusCode, 'application/json', JSON.stringify(response)]
   }
