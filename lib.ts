@@ -28,12 +28,6 @@ if (Zotero.platformMajorVersion < 102) {
 /**
  * Main plugin class for Zotero Citation Linker
  * Enhanced with zotero-plugin-toolkit for better menu management and functionality
- *
- * Provides functionality to:
- * 1. Copy Markdown citations with API links
- * 2. Local HTTP server for external applications
- * 3. Context menu integration (using toolkit MenuManager)
- * 4. Keyboard shortcuts (using toolkit KeyboardManager)
  */
 ;(Zotero as any).ZoteroCitationLinker = new class {
   private notifierID: string
@@ -366,7 +360,7 @@ if (Zotero.platformMajorVersion < 102) {
           }
 
           // Attempt to translate the URL
-          const translationResult = await self._attemptTranslation(url)
+          const translationResult = await self._attemptWebTranslation(url)
 
           if (translationResult.success) {
             // Translation successful - items are already saved by the translation system
@@ -1842,17 +1836,17 @@ if (Zotero.platformMajorVersion < 102) {
    * Attempt to translate the URL using Zotero's translation system
    * **PHASE 4 FIX: Enhanced translation detection and processing**
    */
-  private async _attemptTranslation(url: string) {
+  private async _attemptWebTranslation(url: string) {
     try {
       elogger.info(`Starting translation attempt for URL: ${url}`)
 
       // Load the webpage document
-      let doc = await this._loadDocument(url)
+      let doc
       elogger.info('Document loaded successfully for translation')
 
       // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
       try {
-        doc = Zotero.HTTP.wrapDocument(doc, url)
+        doc =  await this._loadWrappedDocument(url)
         elogger.info(`Document wrapped successfully with Zotero.HTTP.wrapDocument for: ${url}`)
         elogger.info(`Document location href: ${doc.location?.href || 'undefined'}`)
       } catch (err) {
@@ -1862,8 +1856,6 @@ if (Zotero.platformMajorVersion < 102) {
 
       // **FIX: Enhanced translation setup with proper error handling**
       const translation = new Zotero.Translate.Web()
-
-      // Set the document (URL is already embedded via wrapDocument)
       translation.setDocument(doc)
 
       elogger.info('Translation object created and configured')
@@ -2122,7 +2114,6 @@ if (Zotero.platformMajorVersion < 102) {
 
   /**
    * Load a document from URL
-   * **PHASE 4 FIX: Corrected DOM parsing for Zotero 7 compatibility**
    */
   private async _loadDocument(url: string) {
     try {
@@ -2148,7 +2139,7 @@ if (Zotero.platformMajorVersion < 102) {
       elogger.info(`Received response: ${response.status} ${response.statusText}, content length: ${response.responseText.length}`)
 
       // **FIX: Use proper DOM document creation for Zotero 7**
-      let doc: any
+      let doc
       try {
         // Method 1: Try using DOMParser from global context
         const globalWindow = ztoolkit.getGlobal('window') || globalThis
@@ -2238,6 +2229,23 @@ if (Zotero.platformMajorVersion < 102) {
       elogger.error(`Failed to load document from ${url}: ${error.message}`)
       throw new Error(`Failed to load document from ${url}: ${error.message}`)
     }
+  }
+
+  private async _loadWrappedDocument(url: string) {
+      // Load the webpage document
+      let doc = await this._loadDocument(url)
+      elogger.info('Document loaded successfully for translation')
+
+      // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
+      try {
+        doc = Zotero.HTTP.wrapDocument(doc, url)
+        elogger.info(`Document wrapped successfully with Zotero.HTTP.wrapDocument for: ${url}`)
+        elogger.info(`Document location href: ${doc.location?.href || 'undefined'}`)
+      } catch (err) {
+        elogger.error(`Failed to wrap document with Zotero.HTTP.wrapDocument: ${err}`)
+        elogger.info('Continuing with translation using unwrapped document')
+      }
+    return doc
   }
 
   /**
@@ -2941,4 +2949,252 @@ if (Zotero.platformMajorVersion < 102) {
 
     return [statusCode, 'application/json', JSON.stringify(response)]
   }
+
+  private async _detectWebTranslators(url: string): Promise<any[]> {
+    elogger.info(`Detecting translators for URL: ${url}`)
+
+    // Load the webpage document
+    let doc
+    elogger.info('Document loaded successfully for translation')
+
+    // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
+    try {
+      doc =  await this._loadWrappedDocument(url)
+      elogger.info(`Document wrapped successfully with Zotero.HTTP.wrapDocument for: ${url}`)
+      elogger.info(`Document location href: ${doc.location?.href || 'undefined'}`)
+    } catch (err) {
+      elogger.error(`Failed to wrap document with Zotero.HTTP.wrapDocument: ${err}`)
+      elogger.info('Continuing with translation using unwrapped document')
+    }
+
+    // **FIX: Enhanced translation setup with proper error handling**
+    const translation = new Zotero.Translate.Web()
+    translation.setDocument(doc)
+
+    elogger.info('Translation object created and configured')
+
+    // Get available translators
+    const translators = await translation.getTranslators()
+    elogger.info(`Found ${translators.length} translators for this URL`)
+
+    if (translators.length === 0) {
+      elogger.info('No translators found for this URL')
+      return []
+    }
+
+    return translators
+  }
+
+  private async _extractIdentifiersFromHTML(html: string, document: any): Promise<{identifiers:string[], validIdentifiers:string[]}> {
+    // Extract identifiers from both HTML string and DOM document
+    const htmlIdentifiers = this._extractIdentifiersUsingHTML(html)
+    const domIdentifiers = this._extractIdentifiersUringDOM(document)
+
+    // Combine and deduplicate identifiers
+    const allIdentifiers = [...htmlIdentifiers, ...domIdentifiers]
+    const uniqueIdentifiers = [...new Set(allIdentifiers)]
+    const validIdentifiers = await this._verifyIdentifiersTranslator(uniqueIdentifiers)
+
+    return {
+      identifiers: uniqueIdentifiers,
+      validIdentifiers: validIdentifiers,
+    }
+  }
+
+  private _extractIdentifiersUsingHTML(html: string): string[] {
+    const identifiers: string[] = []
+
+    // DOI patterns
+    const doiPatterns = [
+      /doi\.org\/(10\.\d{4,}\/[^\s"<>]+)/gi,
+      /doi:\s*(10\.\d{4,}\/[^\s"<>]+)/gi,
+      /<meta\s+name=["']citation_doi["']\s+content=["']([^"']+)["']/gi,
+      /<meta\s+name=["']dc\.identifier["']\s+content=["'](10\.\d{4,}\/[^"']+)["']/gi,
+      /<meta\s+name=["']bepress_citation_doi["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // ISBN patterns
+    const isbnPatterns = [
+      /isbn[:\s-]*([0-9-]{10,17})/gi,
+      /<meta\s+name=["']citation_isbn["']\s+content=["']([^"']+)["']/gi,
+      /<meta\s+name=["']dc\.identifier\.isbn["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // ISSN patterns
+    const issnPatterns = [
+      /issn[:\s-]*([0-9]{4}-[0-9]{3}[0-9X])/gi,
+      /<meta\s+name=["']citation_issn["']\s+content=["']([^"']+)["']/gi,
+      /<meta\s+name=["']dc\.identifier\.issn["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // PMID patterns
+    const pmidPatterns = [
+      /pmid[:\s-]*(\d+)/gi,
+      /pubmed[:\s-]*(\d+)/gi,
+      /<meta\s+name=["']citation_pmid["']\s+content=["']([^"']+)["']/gi,
+      /<meta\s+name=["']dc\.identifier\.pmid["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // ArXiv patterns
+    const arxivPatterns = [
+      /arxiv\.org\/abs\/(\d+\.\d+)/gi,
+      /arxiv[:\s-]*(\d+\.\d+)/gi,
+      /<meta\s+name=["']citation_arxiv_id["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // OCLC patterns
+    const oclcPatterns = [
+      /oclc[:\s-]*(\d+)/gi,
+      /worldcat\.org\/oclc\/(\d+)/gi,
+      /<meta\s+name=["']citation_oclc["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    // LCCN patterns
+    const lccnPatterns = [
+      /lccn[:\s-]*([a-z]{2,3}\d{6})/gi,
+      /<meta\s+name=["']citation_lccn["']\s+content=["']([^"']+)["']/gi,
+    ]
+
+    const _extractUsingPatterns = (text: string, patterns: RegExp[], identifiers: string[]): void => {
+      for (const pattern of patterns) {
+        let match
+        while ((match = pattern.exec(text)) !== null) {
+          const identifier = match[1] || match[0]
+          if (identifier && !identifiers.includes(identifier)) {
+            identifiers.push(identifier.trim())
+          }
+        }
+      }
+    }
+
+    // Extract from patterns
+    _extractUsingPatterns(html, doiPatterns, identifiers)
+    _extractUsingPatterns(html, isbnPatterns, identifiers)
+    _extractUsingPatterns(html, issnPatterns, identifiers)
+    _extractUsingPatterns(html, pmidPatterns, identifiers)
+    _extractUsingPatterns(html, arxivPatterns, identifiers)
+    _extractUsingPatterns(html, oclcPatterns, identifiers)
+    _extractUsingPatterns(html, lccnPatterns, identifiers)
+
+    return identifiers
+  }
+
+  private _extractIdentifiersUringDOM(document: any): string[] {
+    const identifiers: string[] = []
+
+    // DOI selectors
+    const doiSelectors = [
+      '.doi',
+      '[data-doi]',
+      'a[href*="doi.org"]',
+      'meta[name="citation_doi"]',
+      'meta[name="dc.identifier"]',
+      'meta[name="bepress_citation_doi"]',
+    ]
+
+    // ISBN selectors
+    const isbnSelectors = [
+      '[data-isbn]',
+      'meta[name="citation_isbn"]',
+      'meta[name="dc.identifier.isbn"]',
+    ]
+
+    // ISSN selectors
+    const issnSelectors = [
+      '[data-issn]',
+      'meta[name="citation_issn"]',
+      'meta[name="dc.identifier.issn"]',
+    ]
+
+    // PMID selectors
+    const pmidSelectors = [
+      '[data-pmid]',
+      'meta[name="citation_pmid"]',
+      'meta[name="dc.identifier.pmid"]',
+    ]
+
+    // ArXiv selectors
+    const arxivSelectors = ['[data-arxiv]', 'meta[name="citation_arxiv_id"]']
+
+    // OCLC selectors
+    const oclcSelectors = ['[data-oclc]', 'meta[name="citation_oclc"]']
+
+    // LCCN selectors
+    const lccnSelectors = ['[data-lccn]', 'meta[name="citation_lccn"]']
+
+    const _extractUsingSelectors = (
+      document: any,
+      selectors: string[],
+      identifiers: string[],
+      type: string,
+    ): void => {
+      for (const selector of selectors) {
+        const elements = document.querySelectorAll(selector)
+        for (const element of elements) {
+          let identifier: string | null = null
+
+          // eslint-disable-next-line no-undef
+          if (element instanceof HTMLMetaElement) {
+            identifier = element.content
+          // eslint-disable-next-line no-undef
+          } else if (element instanceof HTMLAnchorElement) {
+            if (type === 'doi' && element.href.includes('doi.org')) {
+              identifier = element.href.replace(/.*doi\.org\//, '')
+            }
+          } else {
+            // Check data attributes
+            identifier =
+              element.getAttribute(`data-${type}`) ||
+              element.getAttribute('data-doi') ||
+              element.getAttribute('data-isbn') ||
+              element.getAttribute('data-issn') ||
+              element.getAttribute('data-pmid') ||
+              element.getAttribute('data-arxiv') ||
+              element.getAttribute('data-oclc') ||
+              element.getAttribute('data-lccn')
+          }
+
+          if (identifier && !identifiers.includes(identifier)) {
+            identifiers.push(identifier.trim())
+          }
+        }
+      }
+    }
+
+    // Extract from DOM elements
+    _extractUsingSelectors(document, doiSelectors, identifiers, 'doi')
+    _extractUsingSelectors(document, isbnSelectors, identifiers, 'isbn')
+    _extractUsingSelectors(document, issnSelectors, identifiers, 'issn')
+    _extractUsingSelectors(document, pmidSelectors, identifiers, 'pmid')
+    _extractUsingSelectors(document, arxivSelectors, identifiers, 'arxiv')
+    _extractUsingSelectors(document, oclcSelectors, identifiers, 'oclc')
+    _extractUsingSelectors(document, lccnSelectors, identifiers, 'lccn')
+
+    return identifiers
+  }
+
+  private async _verifyIdentifiersTranslator(
+    identifiers: string[],
+  ): Promise<string[]> {
+    if (!identifiers || identifiers.length === 0) {
+      elogger.info('No identifiers provided for verification')
+      return undefined
+    }
+
+    elogger.info(`Verifying ${identifiers.length} identifiers: ${identifiers.join(', ')}`)
+
+    const validIdentifiers = (await Promise.all(identifiers.map<Promise<string | null>>(async (identifier) => {
+      const search = new Zotero.Translate.Search()
+      const extractedIdentifiers = Zotero.Utilities.extractIdentifiers(identifier)
+      if (extractedIdentifiers.length === 0) return null
+      search.setIdentifier(extractedIdentifiers[0])
+      const translators = await search.getTranslators()
+      return (translators || []).length > 0 ? identifier : null
+    }))).filter((n) => n !== null)
+
+
+    elogger.info('No identifiers were successfully verified')
+    return validIdentifiers
+  }
+
 }
