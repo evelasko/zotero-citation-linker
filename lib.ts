@@ -3113,6 +3113,173 @@ if (Zotero.platformMajorVersion < 102) {
     return [statusCode, 'application/json', JSON.stringify(response)]
   }
 
+  /**
+   * Validate item data quality - checks for valid title and at least one author
+   * @param item - Zotero item to validate
+   * @returns The item if valid, null if invalid
+   */
+  private _validateItemData(item: any): any | null {
+    try {
+      if (!item) {
+        elogger.debug('Item validation failed: item is null or undefined')
+        return null
+      }
+
+      // Check for valid title
+      const title = item.getField('title')
+      if (!title || typeof title !== 'string') {
+        elogger.debug(`Item validation failed: no title found for item ${item.key}`)
+        return null
+      }
+
+      // Check for invalid title patterns (case-insensitive)
+      const invalidTitlePatterns = [
+        /^untitled$/i,
+        /^no title$/i,
+        /^unknown$/i,
+        /^unknown title$/i,
+        /^(.*\s)?untitled(\s.*)?$/i,
+        /^(.*\s)?no title(\s.*)?$/i,
+        /^\s*$/,  // Empty or whitespace only
+      ]
+
+      const trimmedTitle = title.trim()
+      if (trimmedTitle.length === 0) {
+        elogger.debug(`Item validation failed: empty title for item ${item.key}`)
+        return null
+      }
+
+      for (const pattern of invalidTitlePatterns) {
+        if (pattern.test(trimmedTitle)) {
+          elogger.debug(`Item validation failed: invalid title pattern "${trimmedTitle}" for item ${item.key}`)
+          return null
+        }
+      }
+
+      // Check for at least one author/creator
+      const creators = item.getCreators()
+      if (!creators || creators.length === 0) {
+        elogger.debug(`Item validation failed: no creators found for item ${item.key}`)
+        return null
+      }
+
+      // Validate that at least one creator has a meaningful name
+      const hasValidCreator = creators.some((creator: any) => {
+        const lastName = creator.lastName?.trim()
+        const firstName = creator.firstName?.trim()
+        const name = creator.name?.trim()
+
+        // Check if we have either a lastName, firstName, or single name that's not empty
+        return (lastName && lastName.length > 0) ||
+               (firstName && firstName.length > 0) ||
+               (name && name.length > 0)
+      })
+
+      if (!hasValidCreator) {
+        elogger.debug(`Item validation failed: no valid creators with names for item ${item.key}`)
+        return null
+      }
+
+      elogger.debug(`Item validation passed for item ${item.key}: "${trimmedTitle}" with ${creators.length} creator(s)`)
+      return item
+
+    } catch (error) {
+      elogger.error(`Error validating item data: ${error.message}`)
+      return null
+    }
+  }
+
+  /**
+   * Delete a Zotero item by its key
+   * @param itemKey - The key of the item to delete
+   * @throws Error if the item cannot be found or deleted
+   */
+  private async _deleteItemByKey(itemKey: string): Promise<void> {
+    try {
+      if (!itemKey || typeof itemKey !== 'string' || itemKey.trim().length === 0) {
+        throw new Error('Invalid item key: must be a non-empty string')
+      }
+
+      elogger.info(`Attempting to delete item with key: ${itemKey}`)
+
+      // Find the item by key
+      const item = Zotero.Items.getByLibraryAndKey(Zotero.Libraries.userLibraryID, itemKey)
+      if (!item) {
+        // Try to find in all libraries (including group libraries)
+        const allLibraries = Zotero.Libraries.getAll()
+        let foundItem = null
+
+        for (const library of allLibraries) {
+          const tempItem = Zotero.Items.getByLibraryAndKey(library.libraryID, itemKey)
+          if (tempItem) {
+            foundItem = tempItem
+            break
+          }
+        }
+
+        if (!foundItem) {
+          throw new Error(`Item with key "${itemKey}" not found in any library`)
+        }
+
+        // Use the found item
+        const itemToDelete = foundItem
+
+        // Check if library is editable
+        const library = itemToDelete.library
+        if (!library || !library.editable) {
+          throw new Error(`Cannot delete item "${itemKey}": library is not editable`)
+        }
+
+        // Check if item is already deleted
+        if (itemToDelete.deleted) {
+          throw new Error(`Item "${itemKey}" is already deleted`)
+        }
+
+        // Perform the deletion with timeout protection
+        const deletePromise = itemToDelete.eraseTx()
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timer = Components.classes['@mozilla.org/timer;1'].createInstance(Components.interfaces.nsITimer)
+          timer.initWithCallback(() => {
+            reject(new Error(`Deletion operation timed out after 10 seconds for item "${itemKey}"`))
+          }, 10000, Components.interfaces.nsITimer.TYPE_ONE_SHOT)
+        })
+
+        await Promise.race([deletePromise, timeoutPromise])
+
+        elogger.info(`Successfully deleted item with key: ${itemKey}`)
+        return
+      }
+
+      // Check if library is editable
+      const library = item.library
+      if (!library || !library.editable) {
+        throw new Error(`Cannot delete item "${itemKey}": library is not editable`)
+      }
+
+      // Check if item is already deleted
+      if (item.deleted) {
+        throw new Error(`Item "${itemKey}" is already deleted`)
+      }
+
+      // Perform the deletion with timeout protection
+      const deletePromise = item.eraseTx()
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timer = Components.classes['@mozilla.org/timer;1'].createInstance(Components.interfaces.nsITimer)
+        timer.initWithCallback(() => {
+          reject(new Error(`Deletion operation timed out after 10 seconds for item "${itemKey}"`))
+        }, 10000, Components.interfaces.nsITimer.TYPE_ONE_SHOT)
+      })
+
+      await Promise.race([deletePromise, timeoutPromise])
+
+      elogger.info(`Successfully deleted item with key: ${itemKey}`)
+
+    } catch (error) {
+      elogger.error(`Failed to delete item "${itemKey}": ${error.message}`)
+      throw new Error(`Failed to delete item "${itemKey}": ${error.message}`)
+    }
+  }
+
   private async _detectWebTranslators(url: string): Promise<any[]> {
     elogger.info(`Detecting translators for URL: ${url}`)
 
