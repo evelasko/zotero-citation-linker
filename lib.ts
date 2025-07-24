@@ -2024,15 +2024,36 @@ if (Zotero.platformMajorVersion < 102) {
       const items = await translation.translate()
 
       elogger.info(`Translation completed: ${items ? items.length : 0} items created`)
+      if (!items || items.length === 0) {
+        elogger.info('Translation completed but produced no items')
+        return { success: false, reason: 'Translation completed but produced no items' }
+      }
 
       // Convert items to proper format if they exist
-      if (items && items.length > 0) {
+      if (items.length > 0) {
+        const validItems = []
+
+        for (const item of items) {
+          const isValid = await this._validateItemData(item)
+          if (!isValid) {
+            elogger.info(`Item: ${item.title} is not valid`)
+            await this._deleteItemByKey(item.key)
+          } else {
+            validItems.push(item)
+          }
+        }
+
+        if (validItems.length === 0) {
+          elogger.info('No valid items found after translation')
+          return { success: false, reason: 'No valid items found after translation' }
+        }
+
         // **INTEGRITY FIX: Process duplicates BEFORE formatting to ensure correct item data**
         elogger.info('Starting duplicate detection for translated items')
-        const duplicateResults = await this._processDuplicates(items)
+        const duplicateResults = await this._processDuplicates(validItems)
 
         // **NOW format the final items (after duplicate processing may have replaced some)**
-        const formattedItems = items.map((item: any) => {
+        const formattedItems = validItems.map((item: any) => {
           const jsonItem = item.toJSON()
           jsonItem.key = item.key
           jsonItem.version = item.version
@@ -2109,13 +2130,30 @@ if (Zotero.platformMajorVersion < 102) {
       // Execute the translation
       const items = await search.translate()
 
-      elogger.info(`Identifier translation completed: ${items ? items.length : 0} items created`)
+      if (!items) {
+        elogger.info('Identifier translation completed but produced no items')
+        return { success: false, reason: 'Identifier translation completed but produced no items' }
+      }
+
+      elogger.info(`Identifier translation completed: ${items.length} items created`)
 
       // Convert items to proper format if they exist
-      if (items && items.length > 0) {
+      if (items.length > 0) {
+        const validItems = []
+
+        for (const item of items) {
+          const isValid = await this._validateItemData(item)
+          if (!isValid) {
+            elogger.info(`Item: ${item.title} is not valid`)
+            await this._deleteItemByKey(item.key)
+          } else {
+            validItems.push(item)
+          }
+        }
+
         // **INTEGRITY FIX: Process duplicates BEFORE formatting to ensure correct item data**
         elogger.info('Starting duplicate detection for translated items')
-        const duplicateResults = await this._processDuplicates(items)
+        const duplicateResults = await this._processDuplicates(validItems)
 
         // **NOW format the final items (after duplicate processing may have replaced some)**
         const formattedItems = items.map((item: any) => {
