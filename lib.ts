@@ -395,6 +395,137 @@ if (Zotero.platformMajorVersion < 102) {
 
     // Register the identifier processing endpoint
     this.registerProcessIdentifierEndpoint()
+
+    // Register the URL analysis endpoint
+    this.registerAnalyzeUrlEndpoint()
+  }
+
+  /**
+   * Register the URL analysis endpoint for comprehensive URL analysis
+   */
+  private registerAnalyzeUrlEndpoint() {
+    const self = this
+
+    const AnalyzeUrlEndpoint = function() {}
+    AnalyzeUrlEndpoint.prototype = {
+      supportedMethods: ['POST'],
+      supportedDataTypes: ['application/json'],
+
+      init: async function(requestData) {
+        try {
+          // Validate request data
+          const validationResult = self._validateRequest(requestData)
+          if (!validationResult.valid) {
+            return self._analyzeUrlErrorResponse(400, validationResult.error)
+          }
+
+          const { url } = requestData.data
+          elogger.info(`Analyzing URL: ${url}`)
+
+          // Initialize response structure
+          const response = {
+            itemKey: null,
+            identifiers: [],
+            validIdentifiers: [],
+            webTranslators: [],
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            errors: [],
+          }
+
+          try {
+             //: Step 1: Check if items with same URL exist in library
+             elogger.info('Step 1: Checking for existing items with same URL')
+             const existingItems = await self._findItemsByUrl(url)
+
+             if (existingItems && existingItems.length > 0) {
+              const firstItem = existingItems[0]
+              response.itemKey = firstItem.key
+              elogger.info(`Found existing item with same URL: ${firstItem.key}`)
+              return [200, 'application/json', JSON.stringify(response)]
+            }
+
+            //: Step 2: Extract identifiers from HTML content
+            elogger.info('Step 2: Extracting identifiers from HTML content')
+            try {
+              // Fetch HTML content using Zotero's HTTP method
+              const httpOptions = {
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (compatible; Zotero Citation Linker)',
+                  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                  'Accept-Language': 'en-US,en;q=0.5',
+                },
+                timeout: self.getPreference('serverTimeout', 30000),
+                followRedirects: true,
+              }
+
+              const httpResponse = await Zotero.HTTP.request('GET', url, httpOptions)
+              if (!httpResponse.responseText) {
+                throw new Error('Empty HTML response from URL')
+              }
+
+              // Load document using existing method
+              const document = await self._loadDocument(url)
+
+              //: Extract identifiers using the specified method
+              const identifierResults = await self._extractIdentifiersFromHTML(httpResponse.responseText, document)
+
+              if (identifierResults.validIdentifiers && identifierResults.validIdentifiers.length > 0) {
+                response.identifiers = identifierResults.identifiers || []
+                response.validIdentifiers = identifierResults.validIdentifiers
+                elogger.info(`Found ${identifierResults.validIdentifiers.length} valid identifiers`)
+                return [200, 'application/json', JSON.stringify(response)]
+              }
+
+              // Store identifiers for final response even if none are valid
+              response.identifiers = identifierResults.identifiers || []
+              response.validIdentifiers = identifierResults.validIdentifiers || []
+
+            } catch (error) {
+              elogger.error(`Error extracting identifiers: ${error.message}`)
+              response.errors.push(`Identifier extraction failed: ${error.message}`)
+            }
+
+            // Step 3: Detect web translators
+            elogger.info('Step 3: Detecting web translators')
+            try {
+              const webTranslators = await self._detectWebTranslators(url)
+
+              if (webTranslators && webTranslators.length > 0) {
+                response.webTranslators = webTranslators
+                elogger.info(`Found ${webTranslators.length} web translators`)
+                return [200, 'application/json', JSON.stringify(response)]
+              }
+
+            } catch (error) {
+              elogger.error(`Error detecting web translators: ${error.message}`)
+              response.errors.push(`Web translator detection failed: ${error.message}`)
+            }
+
+            // If we reach here, no analysis method found anything useful
+            if (response.errors.length > 0) {
+              response.status = 'partial_success'
+            }
+
+            elogger.info(`URL analysis completed with ${response.errors.length} errors`)
+            return [200, 'application/json', JSON.stringify(response)]
+
+          } catch (error) {
+            elogger.error(`Error during URL analysis: ${error.message}`)
+            return self._analyzeUrlErrorResponse(500, `Analysis failed: ${error.message}`)
+          }
+
+        } catch (error) {
+          Zotero.logError(new Error(`CitationLinker URL analysis error: ${error.message}`))
+          Zotero.logError(error)
+          return self._analyzeUrlErrorResponse(500, `Internal server error: ${error.message}`)
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/analyzeurl'] = AnalyzeUrlEndpoint
+    elogger.info('Registered /citationlinker/analyzeurl endpoint')
   }
 
   /**
@@ -669,7 +800,8 @@ if (Zotero.platformMajorVersion < 102) {
       delete Zotero.Server.Endpoints['/citationlinker/itemkeybyurl']
       delete Zotero.Server.Endpoints['/citationlinker/detectidentifier']
       delete Zotero.Server.Endpoints['/citationlinker/processidentifier']
-      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, /citationlinker/itemkeybyurl, /citationlinker/detectidentifier, and /citationlinker/processidentifier endpoints')
+      delete Zotero.Server.Endpoints['/citationlinker/analyzeurl']
+      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, /citationlinker/itemkeybyurl, /citationlinker/detectidentifier, /citationlinker/processidentifier, and /citationlinker/analyzeurl endpoints')
     } catch (error) {
       elogger.error(`Error cleaning up API endpoints: ${error}`)
     }
@@ -1840,8 +1972,17 @@ if (Zotero.platformMajorVersion < 102) {
     try {
       elogger.info(`Starting translation attempt for URL: ${url}`)
 
+      const itemsWithTheSameUrl = await this._findItemsByUrl(url)
+      if (itemsWithTheSameUrl && itemsWithTheSameUrl.length > 0) {
+        elogger.info(`Found ${itemsWithTheSameUrl.length} items with the same URL`)
+        return {
+          success: true,
+          items: itemsWithTheSameUrl,
+        }
+      }
+
       // Load the webpage document
-      let doc
+      let doc: any
       elogger.info('Document loaded successfully for translation')
 
       // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
@@ -2139,7 +2280,7 @@ if (Zotero.platformMajorVersion < 102) {
       elogger.info(`Received response: ${response.status} ${response.statusText}, content length: ${response.responseText.length}`)
 
       // **FIX: Use proper DOM document creation for Zotero 7**
-      let doc
+      let doc: any
       try {
         // Method 1: Try using DOMParser from global context
         const globalWindow = ztoolkit.getGlobal('window') || globalThis
@@ -2950,45 +3091,73 @@ if (Zotero.platformMajorVersion < 102) {
     return [statusCode, 'application/json', JSON.stringify(response)]
   }
 
+  /**
+   * Generate error response for analyze URL endpoint
+   * @param statusCode - HTTP status code
+   * @param message - Error message
+   * @returns Error response array
+   */
+  private _analyzeUrlErrorResponse(statusCode: number, message: string) {
+    const response = {
+      status: 'error',
+      error: message,
+      itemKey: null,
+      identifiers: [],
+      validIdentifiers: [],
+      webTranslators: [],
+      timestamp: new Date().toISOString(),
+    }
+
+    elogger.error(`AnalyzeUrl Error ${statusCode}: ${message}`)
+
+    return [statusCode, 'application/json', JSON.stringify(response)]
+  }
+
   private async _detectWebTranslators(url: string): Promise<any[]> {
     elogger.info(`Detecting translators for URL: ${url}`)
 
-    // Load the webpage document
     let doc
-    elogger.info('Document loaded successfully for translation')
-
-    // **FIX: Use Zotero's wrapDocument method - the proper way to prepare docs for translation**
     try {
-      doc =  await this._loadWrappedDocument(url)
-      elogger.info(`Document wrapped successfully with Zotero.HTTP.wrapDocument for: ${url}`)
-      elogger.info(`Document location href: ${doc.location?.href || 'undefined'}`)
+       doc = await this._loadDocument(url)
+       try {
+         doc = Zotero.HTTP.wrapDocument(doc, url)
+       } catch (err) {
+         elogger.error(`Failed to wrap document with Zotero.HTTP.wrapDocument: ${err}`)
+         throw err
+       }
     } catch (err) {
       elogger.error(`Failed to wrap document with Zotero.HTTP.wrapDocument: ${err}`)
-      elogger.info('Continuing with translation using unwrapped document')
+      throw err
     }
 
-    // **FIX: Enhanced translation setup with proper error handling**
     const translation = new Zotero.Translate.Web()
     translation.setDocument(doc)
-
-    elogger.info('Translation object created and configured')
-
-    // Get available translators
-    const translators = await translation.getTranslators()
+    const translators = await translation.getTranslators().catch(() => [])
     elogger.info(`Found ${translators.length} translators for this URL`)
+
+    if (!translators) {
+      elogger.info('No translators found for this URL')
+      return []
+    }
 
     if (translators.length === 0) {
       elogger.info('No translators found for this URL')
       return []
     }
 
-    return translators
+    elogger.info('checking the translators filter')
+    elogger.info(translators)
+    const filteredTranslators = translators.filter((translator: any) => translator.translatorID !== '951c027d-74ac-47d4-a107-9c3069ab7b48')
+    elogger.info('filtered translators')
+    elogger.info(filteredTranslators)
+
+    return filteredTranslators
   }
 
   private async _extractIdentifiersFromHTML(html: string, document: any): Promise<{identifiers:string[], validIdentifiers:string[]}> {
     // Extract identifiers from both HTML string and DOM document
     const htmlIdentifiers = this._extractIdentifiersUsingHTML(html)
-    const domIdentifiers = this._extractIdentifiersUringDOM(document)
+    const domIdentifiers = this._extractIdentifiersUsingDOM(document)
 
     // Combine and deduplicate identifiers
     const allIdentifiers = [...htmlIdentifiers, ...domIdentifiers]
@@ -3079,7 +3248,7 @@ if (Zotero.platformMajorVersion < 102) {
     return identifiers
   }
 
-  private _extractIdentifiersUringDOM(document: any): string[] {
+  private _extractIdentifiersUsingDOM(document: any): string[] {
     const identifiers: string[] = []
 
     // DOI selectors
@@ -3178,7 +3347,7 @@ if (Zotero.platformMajorVersion < 102) {
   ): Promise<string[]> {
     if (!identifiers || identifiers.length === 0) {
       elogger.info('No identifiers provided for verification')
-      return undefined
+      return []
     }
 
     elogger.info(`Verifying ${identifiers.length} identifiers: ${identifiers.join(', ')}`)
@@ -3192,8 +3361,7 @@ if (Zotero.platformMajorVersion < 102) {
       return (translators || []).length > 0 ? identifier : null
     }))).filter((n) => n !== null)
 
-
-    elogger.info('No identifiers were successfully verified')
+    elogger.info(`Successfully verified ${validIdentifiers.length} identifiers`)
     return validIdentifiers
   }
 
