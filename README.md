@@ -1,10 +1,18 @@
 # Zotero Citation Linker
 
-A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.
+A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a comprehensive local HTTP server.
 
-## �� Features
+## 🌟 Features
 
-### ✅ **Intelligent Duplicate Detection** 🆕
+### ✅ **Automatic Quality Control** 🆕
+
+- **Smart Item Validation**: Automatically validates translated items for quality
+- **Title Validation**: Rejects items with invalid titles ("Untitled", "No title", empty, etc.)
+- **Author Requirements**: Ensures at least one valid author/creator exists
+- **Automatic Cleanup**: Invalid items are automatically deleted to maintain library quality
+- **Quality Reporting**: Detailed logging of validation decisions and cleanup actions
+
+### ✅ **Intelligent Duplicate Detection**
 
 - **Multi-Identifier Matching**: Perfect detection using DOI, ISBN, PMID, PMC ID, and ArXiv ID
 - **Smart Fuzzy Matching**: Advanced Title + Author + Year similarity with Levenshtein algorithm
@@ -12,6 +20,14 @@ A powerful Zotero plugin that seamlessly bridges reference management with Markd
 - **Data Integrity Protection**: "Oldest item wins" principle preserves external references
 - **Automated Processing**: Score-based handling (≥85: auto-merge, 70-84: warnings, <70: keep)
 - **External Reference Safety**: Protects Obsidian links, custom plugin citations, and workflows
+
+### ✅ **Enhanced Server Integration** 🆕
+
+- **Comprehensive URL Analysis**: `POST /citationlinker/analyzeurl` - Full URL analysis with multiple detection methods
+- **Identifier Processing**: `POST /citationlinker/processidentifier` - Direct DOI/PMID/ArXiv translation
+- **Translator Detection**: `GET /citationlinker/detectidentifier` - Check available translators for identifiers
+- **Item Lookup**: `GET /citationlinker/itemkeybyurl` - Find existing items by URL
+- **Enhanced Responses**: Rich JSON with citations, metadata, duplicate info, and quality validation
 
 ### ✅ **Markdown Citation Generation**
 
@@ -32,13 +48,6 @@ A powerful Zotero plugin that seamlessly bridges reference management with Markd
 - **Ctrl+Shift+C** (or Cmd+Shift+C on Mac): Quick markdown citation copying
 - **Configurable**: Customize shortcuts through Zotero preferences
 - **Global Access**: Works from anywhere in Zotero's interface
-
-### ✅ **HTTP Server Integration**
-
-- **URL Translation**: `POST /citationlinker/processurl` - Translate web URLs to Zotero items with duplicate detection
-- **Webpage Saving**: `POST /citationlinker/savewebpage` - Save URLs as webpage items
-- **Rich Responses**: JSON responses include citations, metadata, API links, and duplicate information
-- **Error Handling**: Comprehensive error responses with detailed messages
 
 ### ✅ **Advanced Configuration**
 
@@ -97,9 +106,117 @@ npm run build
 
 ### HTTP Server
 
-The plugin runs a local HTTP server (default port 23119) for external integrations:
+The plugin runs a comprehensive local HTTP server (default port 23119) for external integrations:
 
-#### Translate URL to Citation
+#### Comprehensive URL Analysis 🆕
+
+```bash
+curl -X POST http://localhost:23119/citationlinker/analyzeurl \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
+```
+
+**Response** (analyzes URL through multiple methods):
+
+```json
+{
+  "itemKey": "EXISTING123",  // If item already exists
+  "identifiers": ["10.1000/example.doi", "PMC1234567"],
+  "validIdentifiers": ["10.1000/example.doi"],
+  "webTranslators": [
+    {
+      "translatorID": "abc-123",
+      "label": "Example Site",
+      "priority": 100
+    }
+  ],
+  "status": "success",
+  "timestamp": "2024-12-19T10:30:00.000Z",
+  "errors": []
+}
+```
+
+#### Process Identifier Directly 🆕
+
+```bash
+curl -X POST http://localhost:23119/citationlinker/processidentifier \
+  -H "Content-Type: application/json" \
+  -d '{"identifier": "10.1000/example.doi"}'
+```
+
+**Response with Quality Control**:
+
+```json
+{
+  "status": "success",
+  "method": "identifier_translation",
+  "translator": "DOI Content Negotiation",
+  "itemCount": 1,
+  "items": [{
+    "key": "NEWITEM123",
+    "title": "High-Quality Article Title",
+    "creators": [{"firstName": "John", "lastName": "Smith"}],
+    "_meta": {
+      "citation": "(Smith, 2023)",
+      "apiUrl": "https://api.zotero.org/users/12345/items/NEWITEM123"
+    }
+  }],
+  "duplicateInfo": {
+    "processed": true,
+    "autoMerged": [],
+    "possibleDuplicates": []
+  },
+  "qualityControl": {
+    "itemsValidated": 1,
+    "itemsRejected": 0,
+    "validationCriteria": ["title_quality", "author_presence"]
+  }
+}
+```
+
+#### Check Identifier Support 🆕
+
+```bash
+curl "http://localhost:23119/citationlinker/detectidentifier?identifier=10.1000/example.doi"
+```
+
+**Response**:
+
+```json
+{
+  "status": "success",
+  "translators": [
+    {
+      "translatorID": "doi-negotiation",
+      "label": "DOI Content Negotiation",
+      "priority": 100
+    }
+  ],
+  "count": 1,
+  "identifier": "10.1000/example.doi",
+  "timestamp": "2024-12-19T10:30:00.000Z"
+}
+```
+
+#### Find Existing Items by URL 🆕
+
+```bash
+curl "http://localhost:23119/citationlinker/itemkeybyurl?url=https://example.com/article"
+```
+
+**Response**:
+
+```json
+{
+  "status": "success",
+  "items": ["EXISTING123", "EXISTING456"],
+  "count": 2,
+  "url": "https://example.com/article",
+  "timestamp": "2024-12-19T10:30:00.000Z"
+}
+```
+
+#### Translate URL to Citation (Enhanced)
 
 ```bash
 curl -X POST http://localhost:23119/citationlinker/processurl \
@@ -107,7 +224,7 @@ curl -X POST http://localhost:23119/citationlinker/processurl \
   -d '{"url": "https://example.com/article"}'
 ```
 
-**Response with Duplicate Detection**:
+**Enhanced Response with Quality Control**:
 
 ```json
 {
@@ -117,7 +234,7 @@ curl -X POST http://localhost:23119/citationlinker/processurl \
   "itemCount": 1,
   "items": [{
     "key": "EXISTING123",
-    "title": "Article Title",
+    "title": "High-Quality Article Title",
     "creators": [{"firstName": "John", "lastName": "Smith"}],
     "_meta": {
       "citation": "(Smith, 2023)",
@@ -138,17 +255,38 @@ curl -X POST http://localhost:23119/citationlinker/processurl \
     ],
     "possibleDuplicates": [],
     "errors": []
+  },
+  "qualityControl": {
+    "itemsValidated": 2,
+    "itemsRejected": 1,
+    "rejectionReasons": ["Invalid title: 'Untitled'"],
+    "validationCriteria": ["title_quality", "author_presence"]
   }
 }
 ```
 
-#### Save as Webpage (Fallback)
+### Quality Control System 🆕
 
-```bash
-curl -X POST http://localhost:23119/citationlinker/savewebpage \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com/page"}'
-```
+The plugin now automatically validates all imported items:
+
+#### Validation Criteria
+
+1. **Title Quality**:
+   - Rejects "Untitled", "No title", "Unknown", empty titles
+   - Case-insensitive pattern matching
+   - Whitespace normalization
+
+2. **Author Requirements**:
+   - At least one creator with a meaningful name
+   - Validates lastName, firstName, or single name fields
+   - Rejects empty or whitespace-only creator names
+
+#### Automatic Cleanup
+
+- **Invalid Item Deletion**: Automatically removes items that fail validation
+- **Library Quality**: Maintains high-quality metadata standards
+- **Detailed Logging**: Comprehensive logs of validation decisions
+- **Error Handling**: Graceful fallbacks if deletion fails
 
 ### Duplicate Detection
 
@@ -190,6 +328,7 @@ Access preferences through Zotero's standard preferences system:
 - **Port**: Default 23119, customizable
 - **Enable/Disable**: Toggle server functionality
 - **Timeout**: Request timeout in milliseconds
+- **Quality Control**: Enable/disable automatic item validation
 
 ### Citation Generation
 
@@ -197,6 +336,13 @@ Access preferences through Zotero's standard preferences system:
 - **Output Format**: Markdown, HTML, or plain text
 - **Include API URLs**: Toggle API URL generation
 - **Fallback Citations**: Enable enhanced fallback when CSL fails
+
+### Quality Control 🆕
+
+- **Enable Validation**: Toggle automatic quality control
+- **Title Validation**: Configure title quality requirements
+- **Author Requirements**: Set minimum creator standards
+- **Cleanup Policy**: Control automatic deletion behavior
 
 ### User Interface
 
@@ -213,9 +359,95 @@ Access preferences through Zotero's standard preferences system:
 
 ### Server Endpoints
 
-#### `POST /citationlinker/processurl`
+#### `POST /citationlinker/analyzeurl` 🆕
 
-Attempts to translate a URL using Zotero's translation system.
+Performs comprehensive analysis of a URL using multiple detection methods.
+
+**Request**:
+
+```json
+{
+  "url": "https://example.com/article"
+}
+```
+
+**Success Response** (200):
+
+```json
+{
+  "itemKey": "EXISTING123",  // If already exists
+  "identifiers": ["10.1000/example", "PMC123"],
+  "validIdentifiers": ["10.1000/example"],
+  "webTranslators": [/* Available translators */],
+  "status": "success",
+  "timestamp": "2024-12-19T10:30:00.000Z",
+  "errors": []
+}
+```
+
+#### `POST /citationlinker/processidentifier` 🆕
+
+Translates identifiers (DOI, PMID, ArXiv ID, etc.) directly to Zotero items.
+
+**Request**:
+
+```json
+{
+  "identifier": "10.1000/example.doi"
+}
+```
+
+**Success Response** (200):
+
+```json
+{
+  "status": "success",
+  "method": "identifier_translation",
+  "translator": "DOI Content Negotiation",
+  "itemCount": 1,
+  "items": [/* Validated Zotero items */],
+  "duplicateInfo": {/* Duplicate detection results */},
+  "qualityControl": {/* Validation results */}
+}
+```
+
+#### `GET /citationlinker/detectidentifier` 🆕
+
+Checks which translators are available for a given identifier.
+
+**Request**: `?identifier=10.1000/example.doi`
+
+**Success Response** (200):
+
+```json
+{
+  "status": "success",
+  "translators": [/* Available translators */],
+  "count": 1,
+  "identifier": "10.1000/example.doi"
+}
+```
+
+#### `GET /citationlinker/itemkeybyurl` 🆕
+
+Finds existing Zotero items that match a given URL.
+
+**Request**: `?url=https://example.com/article`
+
+**Success Response** (200):
+
+```json
+{
+  "status": "success",
+  "items": ["ITEM123", "ITEM456"],
+  "count": 2,
+  "url": "https://example.com/article"
+}
+```
+
+#### `POST /citationlinker/processurl` (Enhanced)
+
+Attempts to translate a URL using Zotero's translation system with quality control.
 
 **Request**:
 
@@ -233,21 +465,12 @@ Attempts to translate a URL using Zotero's translation system.
   "method": "translation",
   "translator": "Translator Name",
   "itemCount": 1,
-  "items": [/* Zotero items with citation metadata */],
-  "duplicateInfo": {
-    "processed": true,
-    "autoMerged": [
-      {
-        "action": "kept_existing",
-        "keptItemKey": "EXISTING123",
-        "deletedItemKey": "NEW456",
-        "reason": "DOI match + Title similarity",
-        "score": 98,
-        "message": "Preserved existing item to maintain external references"
-      }
-    ],
-    "possibleDuplicates": [],
-    "errors": []
+  "items": [/* Validated Zotero items with citation metadata */],
+  "duplicateInfo": {/* Duplicate detection results */},
+  "qualityControl": {
+    "itemsValidated": 1,
+    "itemsRejected": 0,
+    "validationCriteria": ["title_quality", "author_presence"]
   }
 }
 ```
@@ -257,15 +480,15 @@ Attempts to translate a URL using Zotero's translation system.
 ```json
 {
   "status": "error",
-  "message": "Translation failed: No translators found"
+  "message": "No valid items found after translation"
 }
 ```
 
-#### `POST /citationlinker/savewebpage`
+#### `POST /citationlinker/savewebpage` (Enhanced)
 
-Saves a URL as a basic webpage item (fallback when translation fails).
+Saves a URL as a basic webpage item with quality validation.
 
-**Request**: Same as above
+**Request**: Same as processurl
 
 **Success Response** (200):
 
@@ -275,7 +498,8 @@ Saves a URL as a basic webpage item (fallback when translation fails).
   "method": "webpage",
   "translator": "Built-in webpage creator",
   "itemCount": 1,
-  "items": [/* Webpage item with basic metadata */]
+  "items": [/* Validated webpage item */],
+  "qualityControl": {/* Validation results */}
 }
 ```
 
@@ -348,9 +572,16 @@ npm run postbuild  # Runs automatically after build
 - Check item metadata completeness
 - Verify citation style availability
 
+**Items being rejected during import** 🆕:
+
+- Check debug logs for validation failure reasons
+- Verify source material has proper titles and authors
+- Adjust quality control settings if needed
+- Consider manual import for edge cases
+
 ### Debug Mode
 
-Enable debug logging in preferences for detailed troubleshooting information. Logs appear in Zotero's debug output (Help → Debug Output Logging).
+Enable debug logging in preferences for detailed troubleshooting information. Logs appear in Zotero's debug output (Help → Debug Output Logging). Quality control decisions are logged at debug level.
 
 ## 🤝 Contributing
 
@@ -382,4 +613,4 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**Version**: 1.1.0 | **Status**: Production Ready | **Last Updated**: December 2024
+**Version**: 1.2.0 | **Status**: Production Ready | **Last Updated**: December 2024

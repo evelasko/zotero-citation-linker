@@ -1,6 +1,6 @@
 {
   "name": "zotero-citation-linker",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A powerful Zotero plugin that seamlessly bridges reference management with Markdown-based writing workflows. Generate inline citations with API links instantly, and integrate external applications through a local HTTP server.",
   "type": "module",
   "scripts": {

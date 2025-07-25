@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zotero Citation Linker",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "A powerful Zotero plugin with inline citation generation, context menu integration, keyboard shortcuts, and HTTP server for external application integration. Seamlessly bridges reference management with Markdown-based writing workflows.",
   "homepage_url": "https://github.com/evelasko/zotero-citation-linker",
   "applications": {
