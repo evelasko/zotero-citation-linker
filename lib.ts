@@ -398,6 +398,9 @@ if (Zotero.platformMajorVersion < 102) {
 
     // Register the URL analysis endpoint
     this.registerAnalyzeUrlEndpoint()
+
+    // Register the create item endpoint
+    this.registerCreateItemEndpoint()
   }
 
   /**
@@ -788,6 +791,146 @@ if (Zotero.platformMajorVersion < 102) {
   }
 
   /**
+   * Register the create item endpoint for storing new Zotero items from JSON data
+   */
+  private registerCreateItemEndpoint() {
+    const elogger = logger
+
+    const CreateItemEndpoint = function() {}
+    CreateItemEndpoint.prototype = {
+      supportedMethods: ['POST'],
+      supportedDataTypes: ['application/json'],
+
+      init: async function(requestData: any) {
+        elogger.info('CreateItem endpoint called')
+
+        try {
+          // Validate that we have data
+          if (!requestData.data) {
+            return [400, 'application/json', JSON.stringify({ error: 'No data provided' })]
+          }
+
+          const itemData = requestData.data
+          elogger.info(`!!!Item data: ${JSON.stringify(itemData)}`)
+
+          // Validate required fields
+          if (!itemData.itemType) {
+            return [400, 'application/json', JSON.stringify({ error: 'itemType is required' })]
+          }
+
+          // Validate itemType is a valid Zotero item type
+          const validItemTypes: string[] = (Object.values(Zotero.ItemTypes.getTypes()) as unknown as Record<string,string>[]).map(type => type.name)
+          elogger.info(`>>>Valid item types: ${JSON.stringify(validItemTypes)}`)
+          if (!validItemTypes.includes(itemData.itemType as string)) {
+            return [400, 'application/json', JSON.stringify({
+              error: `Invalid itemType: ${itemData.itemType}. Must be one of: ${validItemTypes.join(', ')}`,
+            })]
+          }
+          const itemType = itemData.itemType as string
+
+          if (!itemData.title) {
+            return [400, 'application/json', JSON.stringify({ error: 'title is required' })]
+          }
+
+          if (!itemData.creators || !Array.isArray(itemData.creators) || itemData.creators.length === 0) {
+            return [400, 'application/json', JSON.stringify({ error: 'At least one creator is required' })]
+          }
+
+          // Validate creators structure
+          for (const creator of itemData.creators) {
+            if (!creator.creatorType) {
+              return [400, 'application/json', JSON.stringify({ error: 'creatorType is required for all creators' })]
+            }
+            if (!creator.lastName && !creator.firstName) {
+              return [400, 'application/json', JSON.stringify({ error: 'At least lastName or firstName is required for all creators' })]
+            }
+          }
+
+          // Check if target library is editable
+          const libraryID = Zotero.Libraries.userLibraryID
+          const library = Zotero.Libraries.get(libraryID)
+          if (!library || !library.editable) {
+            return [500, 'application/json', JSON.stringify({ error: 'Target library is not editable' })]
+          }
+
+          elogger.info(`Creating new ${itemData.itemType} item: ${itemData.title}`)
+
+          // Create new Zotero item
+
+          const item = new Zotero.Item(itemType as any)
+
+          // Set basic fields
+          const basicFields = [
+            'title', 'abstractNote', 'series', 'seriesNumber', 'volume', 'numberOfVolumes',
+            'edition', 'place', 'publisher', 'date', 'pages', 'language', 'ISBN',
+            'shortTitle', 'url', 'accessDate', 'archive', 'archiveLocation',
+            'libraryCatalog', 'callNumber', 'rights', 'extra',
+          ]
+
+          for (const field of basicFields) {
+            if (itemData[field]) {
+              try {
+                item.setField(field, itemData[field] as string)
+              } catch (error) {
+                elogger.error(`Failed to set field ${field}: ${error.message}`)
+              }
+            }
+          }
+
+          // Set creators
+          if (itemData.creators && Array.isArray(itemData.creators)) {
+            const creators = itemData.creators.map(creator => ({
+              creatorType: creator.creatorType,
+              firstName: creator.firstName || '',
+              lastName: creator.lastName || '',
+            }))
+            item.setCreators(creators)
+          }
+
+          // Set tags if provided
+          if (itemData.tags && Array.isArray(itemData.tags)) {
+            const tags = itemData.tags.map(tag => ({
+              tag: tag.tag || '',
+              type: tag.type || 0,
+            }))
+            item.setTags(tags)
+          }
+
+          // Set collections if provided
+          if (itemData.collections && Array.isArray(itemData.collections)) {
+            item.setCollections(itemData.collections)
+          }
+
+          // Save the item
+          const itemID = await item.saveTx()
+          if (!itemID || typeof itemID !== 'number') {
+            throw new Error('Failed to save item - invalid item ID returned')
+          }
+          const savedItem = Zotero.Items.get(itemID)
+          if (!savedItem) {
+            throw new Error('Failed to retrieve saved item')
+          }
+          const itemKey = savedItem.key
+
+          elogger.info(`Successfully created item with key: ${itemKey}`)
+
+          // Return success response with itemKey
+          return [200, 'application/json', JSON.stringify({ itemKey: itemKey })]
+
+        } catch (error) {
+          Zotero.logError(new Error(`CitationLinker CreateItem error: ${error.message}`))
+          Zotero.logError(error)
+          return [500, 'application/json', JSON.stringify({ error: `Internal server error: ${error.message}` })]
+        }
+      },
+    }
+
+    // Register the endpoint
+    Zotero.Server.Endpoints['/citationlinker/createitem'] = CreateItemEndpoint
+    elogger.info('Registered /citationlinker/createitem endpoint')
+  }
+
+  /**
    * Cleanup the API server
    */
   private cleanupApiServer() {
@@ -801,7 +944,8 @@ if (Zotero.platformMajorVersion < 102) {
       delete Zotero.Server.Endpoints['/citationlinker/detectidentifier']
       delete Zotero.Server.Endpoints['/citationlinker/processidentifier']
       delete Zotero.Server.Endpoints['/citationlinker/analyzeurl']
-      elogger.info('Removed /citationlinker/processurl, /citationlinker/savewebpage, /citationlinker/itemkeybyurl, /citationlinker/detectidentifier, /citationlinker/processidentifier, and /citationlinker/analyzeurl endpoints')
+      delete Zotero.Server.Endpoints['/citationlinker/createitem']
+      elogger.info('Removed all CitationLinker endpoints')
     } catch (error) {
       elogger.error(`Error cleaning up API endpoints: ${error}`)
     }
