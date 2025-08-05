@@ -1,0 +1,154 @@
+/**
+ * Constants for Zotero Citation Linker
+ */
+
+// Plugin Information
+export const PLUGIN_NAME = 'ZoteroCitationLinker'
+export const PLUGIN_ID = 'zotero-citation-linker@evelasko.com'
+export const PLUGIN_VERSION = '1.4.0'
+
+// API Configuration
+export const DEFAULT_API_PORT = 23119
+export const API_BASE_PATH = '/citationlinker'
+export const API_TIMEOUT = 30000 // 30 seconds
+
+// Default Preferences
+export const DEFAULT_PREFERENCES = {
+  apiPort: DEFAULT_API_PORT,
+  citationStyle: 'markdown',
+  duplicateThreshold: 0.8,
+  enableKeyboardShortcuts: true,
+  keyboardShortcutModifier: 'shift',
+  keyboardShortcutKey: 'C',
+  enableContextMenu: true,
+  enableApiServer: true,
+  enableDuplicateDetection: true,
+  enableTitleValidation: true,
+  enableAuthorValidation: true,
+  minTitleLength: 3,
+  minAuthorLength: 2,
+  forbiddenTitlePatterns: ['untitled', 'no title', 'placeholder', 'document'],
+  forbiddenAuthorPatterns: ['unknown', 'anonymous', '[s.n.]', 'n/a'],
+}
+
+// API Endpoints
+export const API_ENDPOINTS = {
+  ANALYZE_URL: `${API_BASE_PATH}/analyzeurl`,
+  PROCESS_URL: `${API_BASE_PATH}/processurl`,
+  PROCESS_IDENTIFIER: `${API_BASE_PATH}/processidentifier`,
+  DETECT_IDENTIFIER: `${API_BASE_PATH}/detectidentifier`,
+  SAVE_WEBPAGE: `${API_BASE_PATH}/savewebpage`,
+  ITEM_KEY_BY_URL: `${API_BASE_PATH}/itemkeybyurl`,
+  CREATE_ITEM: `${API_BASE_PATH}/createitem`,
+}
+
+// Identifier Patterns
+export const IDENTIFIER_PATTERNS = {
+  DOI: /10\.\d{4,}(?:\.\d+)*\/[-._;()/:a-zA-Z0-9]+/g,
+  ISBN: /(?:ISBN(?:-1[03])?:?\s*)?(?=[0-9X]{10}$|(?=(?:[0-9]+[-\s]){3})[-\s0-9X]{13}$|97[89][0-9]{10}$|(?=(?:[0-9]+[-\s]){4})[-\s0-9]{17}$)(?:97[89][-\s]?)?[0-9]{1,5}[-\s]?[0-9]+[-\s]?[0-9]+[-\s]?[0-9X]/g,
+  ISSN: /(?:ISSN\s*:?\s*)?(?:\d{4}[-\s]?\d{3}[\dX])/g,
+  PMID: /(?:PMID\s*:?\s*)?(\d{7,8})/g,
+  ARXIV: /(?:arXiv:)?(\d{4}\.\d{4,5}(?:v\d+)?)/g,
+  OCLC: /(?:OCLC\s*:?\s*)?(\d{8,})/g,
+  LCCN: /(?:LCCN\s*:?\s*)?([a-z]{0,3}\d{2,4}\d{6})/g,
+}
+
+// DOM Selectors for Identifier Extraction
+export const IDENTIFIER_SELECTORS = {
+  DOI: [
+    '.doi',
+    '[data-doi]',
+    'a[href*="doi.org"]',
+    'meta[name="citation_doi"]',
+    'meta[name="dc.identifier"]',
+    'meta[name="bepress_citation_doi"]',
+  ],
+  ISBN: [
+    '[data-isbn]',
+    'meta[name="citation_isbn"]',
+    'meta[name="dc.identifier.isbn"]',
+  ],
+  ISSN: [
+    '[data-issn]',
+    'meta[name="citation_issn"]',
+    'meta[name="dc.identifier.issn"]',
+  ],
+  PMID: [
+    '[data-pmid]',
+    'meta[name="citation_pmid"]',
+    'meta[name="dc.identifier.pmid"]',
+  ],
+  ARXIV: [
+    '[data-arxiv]',
+    'meta[name="citation_arxiv_id"]',
+  ],
+  OCLC: [
+    '[data-oclc]',
+    'meta[name="citation_oclc"]',
+  ],
+  LCCN: [
+    '[data-lccn]',
+    'meta[name="citation_lccn"]',
+  ],
+}
+
+// Duplicate Detection Configuration
+export const DUPLICATE_DETECTION = {
+  TITLE_WEIGHT: 0.4,
+  AUTHOR_WEIGHT: 0.3,
+  YEAR_WEIGHT: 0.2,
+  IDENTIFIER_WEIGHT: 0.1,
+  MIN_TITLE_SIMILARITY: 0.7,
+  MIN_AUTHOR_SIMILARITY: 0.6,
+}
+
+// Validation Configuration
+export const VALIDATION = {
+  MIN_TITLE_LENGTH: 3,
+  MAX_TITLE_LENGTH: 500,
+  MIN_AUTHOR_LENGTH: 2,
+  MAX_AUTHOR_LENGTH: 100,
+  FORBIDDEN_TITLE_PATTERNS: [
+    /^untitled$/i,
+    /^no\s*title$/i,
+    /^placeholder$/i,
+    /^document$/i,
+    /^\s*$/,
+  ],
+  FORBIDDEN_AUTHOR_PATTERNS: [
+    /^unknown$/i,
+    /^anonymous$/i,
+    /^\[s\.n\.\]$/i,
+    /^n\/a$/i,
+    /^\s*$/,
+  ],
+}
+
+// HTTP Status Codes
+export const HTTP_STATUS = {
+  OK: 200,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  UNPROCESSABLE_ENTITY: 422,
+  INTERNAL_SERVER_ERROR: 500,
+}
+
+// Citation Formats
+export const CITATION_FORMATS = {
+  MARKDOWN: 'markdown',
+  LATEX: 'latex',
+  ORG: 'org',
+  WIKI: 'wiki',
+  HTML: 'html',
+  PLAIN: 'plain',
+}
+
+// Logging Levels
+export const LOG_LEVELS = {
+  ERROR: 'error',
+  WARN: 'warn',
+  INFO: 'info',
+  DEBUG: 'debug',
+}

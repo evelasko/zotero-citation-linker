@@ -115,10 +115,13 @@ async function build() {
     banner: { js: 'var Zotero;\n' },
   })
 
-  // Bundle main library
+  // Bundle main library with new modular structure
   await bundle({
     entryPoints: ['lib.ts'],
     outdir: 'build',
+    // Support for resolving modules from src directory
+    resolveExtensions: ['.ts', '.js'],
+    external: ['zotero-plugin-toolkit'],
   })
 
   console.log('Build completed successfully!')
