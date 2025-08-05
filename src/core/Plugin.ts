@@ -10,7 +10,7 @@ export class Plugin {
   private initialized = false
   private notifierID: string | null = null
   private serviceManager: ServiceManager
-  private build: number = 4
+  private build: number = 5
 
   constructor() {
     // Initialize the service manager

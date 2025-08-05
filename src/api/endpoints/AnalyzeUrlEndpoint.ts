@@ -49,7 +49,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
       logger.info(`Analyzing URL: ${url}`)
 
       // Initialize response structure
-      const response = {
+      const response: any = {
         itemKey: null,
         identifiers: [],
         validIdentifiers: [],
@@ -57,6 +57,12 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         status: 'success',
         timestamp: new Date().toISOString(),
         errors: [],
+        // DOI disambiguation fields (optional)
+        primaryDOI: undefined,
+        primaryDOIScore: undefined,
+        primaryDOIConfidence: undefined,
+        alternativeDOIs: undefined,
+        disambiguationUsed: false,
       }
 
       try {
@@ -104,6 +110,10 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           })
 
           if (httpResponse.responseText) {
+            // Extract page title for DOI disambiguation
+            const pageTitle = this.extractPageTitle(httpResponse.responseText, document)
+            logger.debug(`Extracted page title: "${pageTitle}"`)
+
             // Extract identifiers using both HTML and DOM methods
             const identifierResults = await IdentifierExtractor.extractIdentifiersFromHTML(
               httpResponse.responseText,
@@ -115,6 +125,49 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
 
             if (identifierResults.validIdentifiers.length > 0) {
               logger.info(`Found ${identifierResults.validIdentifiers.length} valid identifiers`)
+
+              // Enhanced: Use DOI disambiguation if multiple DOIs found
+              if (identifierResults.validIdentifiers.length > 1) {
+                // Filter only DOI identifiers for disambiguation
+                const doiIdentifiers = identifierResults.validIdentifiers.filter(id =>
+                  id.toLowerCase().includes('10.') && id.includes('/'),
+                )
+
+                if (doiIdentifiers.length > 1 && pageTitle) {
+                  logger.info(`Disambiguating ${doiIdentifiers.length} DOI candidates using CrossRef`)
+
+                  try {
+                    const disambiguationResults = await this.serviceManager.crossRefService
+                      .disambiguateDOIs(doiIdentifiers, pageTitle)
+
+                    if (disambiguationResults.length > 0) {
+                      const bestMatch = disambiguationResults[0]
+                      logger.info(`Best DOI match: ${bestMatch.doi} (score: ${bestMatch.finalScore}, confidence: ${bestMatch.confidence})`)
+
+                      // Update response with disambiguation results
+                      response.primaryDOI = bestMatch.doi
+                      response.primaryDOIScore = bestMatch.finalScore
+                      response.primaryDOIConfidence = bestMatch.confidence
+                      response.alternativeDOIs = disambiguationResults.slice(1, 3).map(result => ({
+                        doi: result.doi,
+                        score: result.finalScore,
+                        confidence: result.confidence,
+                      }))
+                      response.disambiguationUsed = true
+
+                      // Set the best match as the first in validIdentifiers
+                      response.validIdentifiers = [
+                        bestMatch.doi,
+                        ...identifierResults.validIdentifiers.filter(id => id !== bestMatch.doi),
+                      ]
+                    }
+                  } catch (error) {
+                    logger.warn(`DOI disambiguation failed: ${error}`)
+                    response.errors.push(`DOI disambiguation failed: ${error}`)
+                  }
+                }
+              }
+
               return this.successResponse(response)
             }
           } else {
@@ -208,6 +261,76 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
     } catch (error) {
       logger.error(`Error finding items by URL: ${error}`)
       return []
+    }
+  }
+
+  /**
+   * Extract page title from HTML content and DOM document
+   * @param htmlContent - Raw HTML content
+   * @param document - DOM document (optional)
+   * @returns Extracted title or empty string
+   */
+  private extractPageTitle(htmlContent: string, document?: any): string {
+    try {
+      // Method 1: Try to get title from DOM if available
+      if (document && document.title) {
+        const domTitle = document.title.trim()
+        if (domTitle && domTitle.length > 0) {
+          logger.debug(`Title extracted from DOM: "${domTitle}"`)
+          return this.cleanTitle(domTitle)
+        }
+      }
+
+      // Method 2: Extract from HTML using regex
+      const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)
+      if (titleMatch && titleMatch[1]) {
+        const htmlTitle = titleMatch[1].trim()
+        if (htmlTitle && htmlTitle.length > 0) {
+          logger.debug(`Title extracted from HTML: "${htmlTitle}"`)
+          return this.cleanTitle(htmlTitle)
+        }
+      }
+
+      // Method 3: Try meta tags
+      const metaTitleMatch = htmlContent.match(/<meta[^>]+name=['"]title['"][^>]+content=['"]([^'"]+)['"][^>]*>/i) ||
+                           htmlContent.match(/<meta[^>]+property=['"]og:title['"][^>]+content=['"]([^'"]+)['"][^>]*>/i) ||
+                           htmlContent.match(/<meta[^>]+name=['"]citation_title['"][^>]+content=['"]([^'"]+)['"][^>]*>/i)
+
+      if (metaTitleMatch && metaTitleMatch[1]) {
+        const metaTitle = metaTitleMatch[1].trim()
+        if (metaTitle && metaTitle.length > 0) {
+          logger.debug(`Title extracted from meta tags: "${metaTitle}"`)
+          return this.cleanTitle(metaTitle)
+        }
+      }
+
+      logger.debug('No title found in HTML content')
+      return ''
+    } catch (error) {
+      logger.warn(`Error extracting page title: ${error}`)
+      return ''
+    }
+  }
+
+  /**
+   * Clean and normalize extracted title
+   * @param title - Raw title string
+   * @returns Cleaned title
+   */
+  private cleanTitle(title: string): string {
+    try {
+      return title
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    } catch (error) {
+      logger.warn(`Error cleaning title: ${error}`)
+      return title
     }
   }
 }

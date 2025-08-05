@@ -158,3 +158,84 @@ export class TranslationError extends PluginError {
     this.name = 'TranslationError'
   }
 }
+
+// CrossRef API Types
+export interface CrossRefWork {
+  DOI: string
+  title: string[]
+  subtitle?: string[]
+  'short-title'?: string[]
+  author?: CrossRefAuthor[]
+  'container-title'?: string[]
+  ISSN?: string[]
+  volume?: string
+  issue?: string
+  'published-print'?: CrossRefDate
+  'published-online'?: CrossRefDate
+  created?: CrossRefDate
+  type: string
+  publisher?: string
+  URL?: string
+  subject?: string[]
+  abstract?: string
+  license?: CrossRefLicense[]
+  reference?: any[]
+}
+
+export interface CrossRefAuthor {
+  family: string
+  given?: string
+  affiliation?: CrossRefAffiliation[]
+  ORCID?: string
+}
+
+export interface CrossRefAffiliation {
+  name: string
+}
+
+export interface CrossRefDate {
+  'date-parts': number[][]
+}
+
+export interface CrossRefLicense {
+  URL: string
+  'content-version': string
+  'delay-in-days': number
+  start: CrossRefDate
+}
+
+export interface CrossRefApiResponse {
+  status: string
+  'message-type': string
+  'message-version': string
+  message: CrossRefWork | CrossRefWork[]
+}
+
+// DOI Disambiguation Types
+export interface DisambiguationResult {
+  doi: string
+  finalScore: number
+  titleSimilarity: number
+  urlPriority: number
+  contentPosition: number
+  crossrefMetadata: CrossRefWork | null
+  isValid: boolean
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface DOICandidate {
+  doi: string
+  extractionMethod: string
+  position: DOIPosition
+  context?: string
+}
+
+export type DOIPosition = 'url' | 'meta' | 'jsonld' | 'content' | 'references' | 'sidebar' | 'unknown'
+
+export interface DOIDisambiguationConfig {
+  maxCandidates: number
+  titleSimilarityWeight: number
+  urlPriorityWeight: number
+  contentPositionWeight: number
+  minimumConfidenceScore: number
+}
