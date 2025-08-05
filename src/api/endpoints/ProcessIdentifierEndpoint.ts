@@ -50,7 +50,59 @@ export class ProcessIdentifierEndpoint extends BaseEndpoint {
         return this.errorResponse('Target library is not editable', 500)
       }
 
-      // Attempt to translate the identifier
+      // First, extract the identifier to determine its type
+      const extractedIdentifiers = Zotero.Utilities.extractIdentifiers(identifier!.trim())
+      if (extractedIdentifiers.length > 0) {
+        const extractedId = extractedIdentifiers[0] as any
+
+        // Determine identifier type based on the extracted format
+        let identifierType: string | null = null
+        let identifierValue: string | null = null
+
+        if ('DOI' in extractedId && extractedId.DOI) {
+          identifierType = 'DOI'
+          identifierValue = extractedId.DOI
+        } else if ('PMID' in extractedId && extractedId.PMID) {
+          identifierType = 'PMID'
+          identifierValue = extractedId.PMID
+        } else if ('arXiv' in extractedId && extractedId.arXiv) {
+          identifierType = 'ARXIV'
+          identifierValue = extractedId.arXiv
+        }
+
+        // Check if item already exists in library
+        if (identifierType && identifierValue) {
+          logger.info(`Checking for existing item with ${identifierType}: ${identifierValue}`)
+          const existingItem = await this.serviceManager.duplicateDetector.findItemByIdentifier(
+            identifierType,
+            identifierValue,
+          )
+
+          if (existingItem) {
+            logger.info(`Found existing item with ${identifierType}: ${identifierValue}`)
+
+            // Return the existing item using the standard translation success response
+            return this.translationSuccessResponse(
+              [existingItem],
+              'existing_item',
+              `Library lookup (${identifierType})`,
+              {
+                processed: true,
+                duplicateCount: 0,
+                existingItem: true,
+                message: `Item already exists in library with ${identifierType}: ${identifierValue}`,
+                identifierInfo: {
+                  identifier: identifier,
+                  identifierType: identifierType,
+                  identifierValue: identifierValue,
+                },
+              },
+            )
+          }
+        }
+      }
+
+      // No existing item found, attempt to translate the identifier
       const translationResult = await this.webTranslator.attemptIdentifierTranslation(identifier!)
 
       if (translationResult.success) {

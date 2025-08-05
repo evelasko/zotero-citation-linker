@@ -483,6 +483,128 @@ export class DuplicateDetector implements IService {
   }
 
   /**
+   * Find existing item by URL
+   * @param url - URL to search for
+   * @returns Existing item if found, null otherwise
+   */
+  async findItemByUrl(url: string): Promise<any | null> {
+    try {
+      logger.info(`Searching for existing item with URL: ${url}`)
+
+      // Normalize the URL for comparison
+      const normalizedUrl = UrlUtils.normalizeUrl(url)
+      const domain = UrlUtils.extractDomain(normalizedUrl)
+
+      // Search for items with URLs containing the domain
+      const search = new Zotero.Search()
+      search.addCondition('url', 'contains', domain)
+      search.addCondition('itemType', 'isNot', 'attachment')
+      search.addCondition('itemType', 'isNot', 'note')
+
+      const itemIDs = await search.search()
+      const items = await Zotero.Items.getAsync(itemIDs)
+
+      // Find exact URL match
+      for (const item of items) {
+        const itemUrl = item.getField('url')
+        if (itemUrl) {
+          const itemNormalizedUrl = UrlUtils.normalizeUrl(itemUrl)
+          if (itemNormalizedUrl === normalizedUrl) {
+            logger.info(`Found existing item with URL: ${url}`)
+            return item
+          }
+        }
+      }
+
+      logger.info(`No existing item found with URL: ${url}`)
+      return null
+    } catch (error) {
+      logger.error(`Error searching for item by URL: ${error}`)
+      return null
+    }
+  }
+
+  /**
+   * Find existing item by identifier (DOI, PMID, ArXiv, etc.)
+   * @param identifierType - Type of identifier (DOI, PMID, ARXIV)
+   * @param identifierValue - Value of the identifier
+   * @returns Existing item if found, null otherwise
+   */
+  async findItemByIdentifier(identifierType: string, identifierValue: string): Promise<any | null> {
+    try {
+      logger.info(`Searching for existing item with ${identifierType}: ${identifierValue}`)
+
+      let items: any[] = []
+
+      switch (identifierType.toUpperCase()) {
+        case 'DOI': {
+          const search = new Zotero.Search()
+          search.addCondition('DOI', 'is', identifierValue)
+          search.addCondition('itemType', 'isNot', 'attachment')
+          search.addCondition('itemType', 'isNot', 'note')
+
+          const itemIDs = await search.search()
+          items = await Zotero.Items.getAsync(itemIDs)
+          break
+        }
+
+        case 'PMID': {
+          // Search in extra field for PMID
+          const search = new Zotero.Search()
+          search.addCondition('extra', 'contains', `PMID: ${identifierValue}`)
+          search.addCondition('itemType', 'isNot', 'attachment')
+          search.addCondition('itemType', 'isNot', 'note')
+
+          const itemIDs = await search.search()
+          const potentialItems = await Zotero.Items.getAsync(itemIDs)
+
+          // Filter to ensure exact PMID match
+          items = potentialItems.filter(item => {
+            const extra = item.getField('extra') || ''
+            const match = extra.match(/PMID:\s*(\d+)/i)
+            return match && match[1] === identifierValue
+          })
+          break
+        }
+
+        case 'ARXIV': {
+          // Search in extra field for ArXiv ID
+          const search = new Zotero.Search()
+          search.addCondition('extra', 'contains', identifierValue)
+          search.addCondition('itemType', 'isNot', 'attachment')
+          search.addCondition('itemType', 'isNot', 'note')
+
+          const itemIDs = await search.search()
+          const potentialItems = await Zotero.Items.getAsync(itemIDs)
+
+          // Filter to ensure exact ArXiv match
+          items = potentialItems.filter(item => {
+            const extra = item.getField('extra') || ''
+            return /arXiv/i.test(extra) && extra.includes(identifierValue)
+          })
+          break
+        }
+
+        default:
+          logger.warn(`Unknown identifier type: ${identifierType}`)
+          return null
+      }
+
+      if (items.length > 0) {
+        logger.info(`Found ${items.length} existing item(s) with ${identifierType}: ${identifierValue}`)
+        // Return the first matching item
+        return items[0]
+      }
+
+      logger.info(`No existing item found with ${identifierType}: ${identifierValue}`)
+      return null
+    } catch (error) {
+      logger.error(`Error searching for item by identifier: ${error}`)
+      return null
+    }
+  }
+
+  /**
    * Check if service is initialized
    */
   isInitialized(): boolean {

@@ -3,6 +3,7 @@ import { ServiceManager } from '../../core/ServiceManager'
 import { WebTranslator } from '../../translators/WebTranslator'
 import { API_ENDPOINTS } from '../../config/constants'
 import { apiLogger as logger } from '../../core/Logger'
+import { UrlUtils } from '../../utils/UrlUtils'
 
 /**
  * Endpoint for processing URLs and translating them to Zotero items
@@ -50,7 +51,32 @@ export class ProcessUrlEndpoint extends BaseEndpoint {
         return this.errorResponse('Target library is not editable', 500)
       }
 
-      // Attempt to translate the URL
+      // First, check if an item with this URL already exists in the library
+      logger.info(`Checking for existing item with URL: ${url}`)
+      const existingItem = await this.serviceManager.duplicateDetector.findItemByUrl(url!)
+
+      if (existingItem) {
+        logger.info(`Found existing item with URL: ${url}`)
+
+        // Return the existing item using the standard translation success response
+        return this.translationSuccessResponse(
+          [existingItem],
+          'existing_item',
+          'Library lookup (URL)',
+          {
+            processed: true,
+            duplicateCount: 0,
+            existingItem: true,
+            message: `Item already exists in library with URL: ${url}`,
+            urlInfo: {
+              url: url,
+              normalizedUrl: UrlUtils.normalizeUrl(url!),
+            },
+          },
+        )
+      }
+
+      // No existing item found, attempt to translate the URL
       const translationResult = await this.webTranslator.attemptWebTranslation(url!)
 
       if (translationResult.success) {
