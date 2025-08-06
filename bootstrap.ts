@@ -8,6 +8,25 @@ const logger = new Logger('ZoteroCitationLinker')
 // Create toolkit instance that will be available to lib.js
 let ztoolkit: any
 
+/**
+ * Register preferences pane for the plugin
+ */
+function registerPreferencesPane() {
+  try {
+    // For now, use the built-in about:config mechanism
+    // Users can access preferences via Edit -> Preferences -> Advanced -> Config Editor
+    // and search for "extensions.zotero-citation-linker"
+    logger.info('Plugin preferences available in Advanced -> Config Editor')
+
+    // Log guidance for users about preferences
+    const message = 'To configure Perplexity API key: Edit → Preferences → Advanced → Config Editor → Search "extensions.zotero.perplexityApiKey"'
+    logger.info(message)
+
+  } catch (error) {
+    logger.error(`Error in preferences setup: ${error}`)
+  }
+}
+
 export async function install() {
   logger.info('Plugin installed')
 }
@@ -36,6 +55,9 @@ export async function startup({ id, version, resourceURI, rootURI = resourceURI.
       Zotero,
       ztoolkit,
     })
+
+    // Register preferences pane
+    registerPreferencesPane()
 
     // Initialize the plugin (this will load the server endpoint)
     ;(Zotero as any).ZoteroCitationLinker.install()

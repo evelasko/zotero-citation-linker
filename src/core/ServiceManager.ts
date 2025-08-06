@@ -2,6 +2,7 @@ import { ItemValidator } from '../services/ItemValidator'
 import { DuplicateDetector } from '../services/DuplicateDetector'
 import { CitationGenerator } from '../services/CitationGenerator'
 import { CrossRefService } from '../services/CrossRefService'
+import { PerplexityService } from '../services/PerplexityService'
 import { ApiServer } from '../services/ApiServer'
 import { UIManager } from '../ui/UIManager'
 import { TranslatorManager } from '../translators/TranslatorManager'
@@ -20,6 +21,7 @@ export class ServiceManager {
   public duplicateDetector: DuplicateDetector
   public citationGenerator: CitationGenerator
   public crossRefService: CrossRefService
+  public perplexityService: PerplexityService
   public apiServer: ApiServer
   public uiManager: UIManager
   public translatorManager: TranslatorManager
@@ -30,6 +32,7 @@ export class ServiceManager {
     this.duplicateDetector = new DuplicateDetector()
     this.citationGenerator = new CitationGenerator()
     this.crossRefService = new CrossRefService()
+    this.perplexityService = new PerplexityService()
     this.apiServer = new ApiServer(this)
     this.uiManager = new UIManager(this)
     this.translatorManager = new TranslatorManager(this)
@@ -39,6 +42,7 @@ export class ServiceManager {
     this.services.set('duplicateDetector', this.duplicateDetector)
     this.services.set('citationGenerator', this.citationGenerator)
     this.services.set('crossRefService', this.crossRefService)
+    this.services.set('perplexityService', this.perplexityService)
     this.services.set('apiServer', this.apiServer)
     this.services.set('uiManager', this.uiManager)
     this.services.set('translatorManager', this.translatorManager)

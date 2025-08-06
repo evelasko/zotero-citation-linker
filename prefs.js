@@ -19,3 +19,6 @@ pref('extensions.zotero-citation-linker.includeDOI', true);
 // API server security
 pref('extensions.zotero-citation-linker.apiEnabled', true);
 pref('extensions.zotero-citation-linker.corsEnabled', false);
+
+// AI Translation
+pref('extensions.zotero-citation-linker.perplexityApiKey', '');

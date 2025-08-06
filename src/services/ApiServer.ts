@@ -4,6 +4,7 @@ import { serviceLogger as logger } from '../core/Logger'
 import { DEFAULT_API_PORT } from '../config/constants'
 // Import all endpoints
 import { ProcessUrlEndpoint } from '../api/endpoints/ProcessUrlEndpoint'
+import { ProcessUrlWithAiEndpoint } from '../api/endpoints/ProcessUrlWithAiEndpoint'
 import { AnalyzeUrlEndpoint } from '../api/endpoints/AnalyzeUrlEndpoint'
 import { ProcessIdentifierEndpoint } from '../api/endpoints/ProcessIdentifierEndpoint'
 import { DetectIdentifierEndpoint } from '../api/endpoints/DetectIdentifierEndpoint'
@@ -94,6 +95,7 @@ export class ApiServer implements IService {
   private async initializeEndpoints(): Promise<void> {
     const endpointClasses = [
       ProcessUrlEndpoint,
+      ProcessUrlWithAiEndpoint,
       AnalyzeUrlEndpoint,
       ProcessIdentifierEndpoint,
       DetectIdentifierEndpoint,

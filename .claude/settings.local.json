@@ -12,7 +12,10 @@
       "WebFetch(domain:www.npmjs.com)",
       "WebFetch(domain:api.crossref.org)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.crossref.org)"
+      "WebFetch(domain:www.crossref.org)",
+      "Bash(grep:*)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs"
     ],
     "deny": []
   }

@@ -63,7 +63,13 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         primaryDOIConfidence: undefined,
         alternativeDOIs: undefined,
         disambiguationUsed: false,
+        // AI translation fields
+        aiTranslation: false,
       }
+
+      // Shared variables for HTML content and page title
+      let httpResponse: any = null
+      let pageTitle = ''
 
       try {
         // Step 1: Check if items with same URL exist in library
@@ -99,7 +105,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           const document = await IdentifierExtractor.loadDocument(url!)
 
           // Fetch HTML content
-          const httpResponse = await Zotero.HTTP.request('GET', url!, {
+          httpResponse = await Zotero.HTTP.request('GET', url!, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (compatible; Zotero Citation Linker)',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -111,7 +117,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
 
           if (httpResponse.responseText) {
             // Extract page title for DOI disambiguation
-            const pageTitle = this.extractPageTitle(httpResponse.responseText, document)
+            pageTitle = this.extractPageTitle(httpResponse.responseText, document)
             logger.debug(`Extracted page title: "${pageTitle}"`)
 
             // Extract identifiers using both HTML and DOM methods
@@ -196,6 +202,69 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         } catch (error) {
           logger.error(`Error detecting web translators: ${error}`)
           response.errors.push(`Web translator detection failed: ${error}`)
+        }
+
+        // Step 5: AI Identifier Extraction using Perplexity (fallback when no other methods work)
+        logger.info('Step 5: Attempting AI identifier extraction using Perplexity')
+        try {
+          // Check if Perplexity service is available and configured
+          if (this.serviceManager.perplexityService.isInitialized()) {
+            // Try to fetch content if we don't have it yet
+            if (!httpResponse || !httpResponse.responseText) {
+              try {
+                httpResponse = await Zotero.HTTP.request('GET', url!, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Zotero Citation Linker)',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                  },
+                  timeout: 30000,
+                  followRedirects: true,
+                })
+
+                if (httpResponse && httpResponse.responseText) {
+                  const document = await IdentifierExtractor.loadDocument(url!)
+                  pageTitle = this.extractPageTitle(httpResponse.responseText, document)
+                }
+              } catch (fetchError) {
+                logger.warn(`Could not fetch content for AI analysis: ${fetchError}`)
+                response.errors.push(`Content fetch for AI failed: ${fetchError}`)
+                // Continue without content - AI can still work with just URL
+              }
+            }
+
+            logger.info(`Starting AI identifier extraction with title: "${pageTitle}"`)
+
+            // Try AI identifier extraction only
+            try {
+              const aiIdentifiers = await this.serviceManager.perplexityService.extractIdentifiers(url!, pageTitle || undefined)
+
+              if (aiIdentifiers && aiIdentifiers.length > 0) {
+                response.validIdentifiers = aiIdentifiers
+                response.primaryDOI = aiIdentifiers[0] // First identifier gets priority
+                response.primaryDOIScore = 0.95 // High confidence for AI-found identifiers
+                response.primaryDOIConfidence = 'high'
+                response.aiTranslation = true
+                logger.info(`AI extracted ${aiIdentifiers.length} identifiers successfully`)
+                return this.successResponse(response)
+              }
+            } catch (identifierError) {
+              logger.warn(`AI identifier extraction failed: ${identifierError}`)
+              response.errors.push(`AI identifier extraction failed: ${identifierError}`)
+            }
+
+          } else {
+            logger.debug('Perplexity service not initialized - skipping AI translation')
+          }
+        } catch (error) {
+          logger.error(`Error in AI identifier extraction step: ${error}`)
+          response.errors.push(`AI identifier extraction failed: ${error}`)
+        }
+
+        // Check if URL is accessible for potential AI processing
+        if (httpResponse && httpResponse.status === 200) {
+          response.aiTranslation = true // Indicates AI can process this URL
+          logger.info('URL is accessible - AI translation available via processurlwithai endpoint')
         }
 
         // If we reach here, no analysis method found anything useful

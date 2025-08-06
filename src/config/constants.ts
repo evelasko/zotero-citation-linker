@@ -29,12 +29,14 @@ export const DEFAULT_PREFERENCES = {
   minAuthorLength: 2,
   forbiddenTitlePatterns: ['untitled', 'no title', 'placeholder', 'document'],
   forbiddenAuthorPatterns: ['unknown', 'anonymous', '[s.n.]', 'n/a'],
+  perplexityApiKey: '',
 }
 
 // API Endpoints
 export const API_ENDPOINTS = {
   ANALYZE_URL: `${API_BASE_PATH}/analyzeurl`,
   PROCESS_URL: `${API_BASE_PATH}/processurl`,
+  PROCESS_URL_WITH_AI: `${API_BASE_PATH}/processurlwithai`,
   PROCESS_IDENTIFIER: `${API_BASE_PATH}/processidentifier`,
   DETECT_IDENTIFIER: `${API_BASE_PATH}/detectidentifier`,
   SAVE_WEBPAGE: `${API_BASE_PATH}/savewebpage`,
