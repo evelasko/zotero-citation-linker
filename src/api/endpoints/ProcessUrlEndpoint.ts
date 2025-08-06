@@ -4,16 +4,19 @@ import { WebTranslator } from '../../translators/WebTranslator'
 import { API_ENDPOINTS } from '../../config/constants'
 import { apiLogger as logger } from '../../core/Logger'
 import { UrlUtils } from '../../utils/UrlUtils'
+import { PdfProcessor } from '../../services/PdfProcessor'
 
 /**
  * Endpoint for processing URLs and translating them to Zotero items
  */
 export class ProcessUrlEndpoint extends BaseEndpoint {
   private webTranslator: WebTranslator
+  private pdfProcessor: PdfProcessor
 
   constructor(serviceManager: ServiceManager) {
     super(API_ENDPOINTS.PROCESS_URL, serviceManager, ['POST'])
     this.webTranslator = new WebTranslator()
+    this.pdfProcessor = new PdfProcessor()
   }
 
   /**
@@ -21,6 +24,7 @@ export class ProcessUrlEndpoint extends BaseEndpoint {
    */
   async initialize(): Promise<void> {
     await this.webTranslator.initialize()
+    await this.pdfProcessor.initialize()
   }
 
   /**
@@ -28,6 +32,7 @@ export class ProcessUrlEndpoint extends BaseEndpoint {
    */
   async cleanup(): Promise<void> {
     await this.webTranslator.cleanup()
+    await this.pdfProcessor.cleanup()
   }
 
   /**
@@ -76,7 +81,72 @@ export class ProcessUrlEndpoint extends BaseEndpoint {
         )
       }
 
-      // No existing item found, attempt to translate the URL
+      // Check if URL is a PDF
+      if (UrlUtils.isPdfUrl(url!)) {
+        logger.info(`Detected PDF URL, attempting PDF processing: ${url}`)
+
+        // Process PDF to extract identifiers and metadata
+        const pdfResult = await this.pdfProcessor.processPdfFromUrl(url!)
+
+        if (pdfResult.success && pdfResult.identifiers) {
+          // Try to translate using extracted identifiers
+          if (pdfResult.identifiers.doi) {
+            logger.info(`Found DOI in PDF: ${pdfResult.identifiers.doi}`)
+            const doiTranslationResult = await this.webTranslator.attemptIdentifierTranslation(pdfResult.identifiers.doi)
+
+            if (doiTranslationResult.success) {
+              const processedItems = await this.processTranslatedItems(doiTranslationResult.items)
+
+              return this.translationSuccessResponse(
+                processedItems.validItems,
+                'pdf_doi_translation',
+                doiTranslationResult.translator || 'DOI',
+                {
+                  ...processedItems.duplicateProcessing,
+                  pdfProcessed: true,
+                  extractedIdentifier: pdfResult.identifiers.doi,
+                  pdfMetadata: pdfResult.metadata,
+                },
+              )
+            }
+          }
+
+          // Try other identifiers if DOI failed
+          if (pdfResult.identifiers.arxiv) {
+            logger.info(`Found arXiv ID in PDF: ${pdfResult.identifiers.arxiv}`)
+            const arxivTranslationResult = await this.webTranslator.attemptIdentifierTranslation(`arXiv:${pdfResult.identifiers.arxiv}`)
+
+            if (arxivTranslationResult.success) {
+              const processedItems = await this.processTranslatedItems(arxivTranslationResult.items)
+
+              return this.translationSuccessResponse(
+                processedItems.validItems,
+                'pdf_arxiv_translation',
+                arxivTranslationResult.translator || 'arXiv',
+                {
+                  ...processedItems.duplicateProcessing,
+                  pdfProcessed: true,
+                  extractedIdentifier: pdfResult.identifiers.arxiv,
+                  pdfMetadata: pdfResult.metadata,
+                },
+              )
+            }
+          }
+
+          // If no identifiers worked, return error with extracted metadata
+          logger.info('PDF processing completed but no valid items created from identifiers')
+          return this.errorResponse(
+            `PDF processed but could not create item from extracted identifiers. Found: ${JSON.stringify(pdfResult.identifiers)}`,
+            422,
+            { pdfMetadata: pdfResult.metadata, identifiers: pdfResult.identifiers },
+          )
+        }
+
+        // PDF processing failed or no identifiers found
+        logger.info('PDF processing failed or no identifiers found, falling back to regular web translation')
+      }
+
+      // No existing item found, attempt regular web translation
       const translationResult = await this.webTranslator.attemptWebTranslation(url!)
 
       if (translationResult.success) {

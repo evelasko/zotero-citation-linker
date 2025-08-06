@@ -6,6 +6,7 @@ import { PerplexityService } from '../services/PerplexityService'
 import { ApiServer } from '../services/ApiServer'
 import { UIManager } from '../ui/UIManager'
 import { TranslatorManager } from '../translators/TranslatorManager'
+import { PdfProcessor } from '../services/PdfProcessor'
 import { logger } from './Logger'
 import { IService } from './types'
 
@@ -25,6 +26,7 @@ export class ServiceManager {
   public apiServer: ApiServer
   public uiManager: UIManager
   public translatorManager: TranslatorManager
+  public pdfProcessor: PdfProcessor
 
   constructor() {
     // Initialize service instances
@@ -36,6 +38,7 @@ export class ServiceManager {
     this.apiServer = new ApiServer(this)
     this.uiManager = new UIManager(this)
     this.translatorManager = new TranslatorManager(this)
+    this.pdfProcessor = new PdfProcessor()
 
     // Register services
     this.services.set('itemValidator', this.itemValidator)
@@ -46,6 +49,7 @@ export class ServiceManager {
     this.services.set('apiServer', this.apiServer)
     this.services.set('uiManager', this.uiManager)
     this.services.set('translatorManager', this.translatorManager)
+    this.services.set('pdfProcessor', this.pdfProcessor)
   }
 
   /**

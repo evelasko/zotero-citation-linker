@@ -5,6 +5,7 @@ import { IdentifierExtractor } from '../../utils/IdentifierExtractor'
 import { UrlUtils } from '../../utils/UrlUtils'
 import { API_ENDPOINTS } from '../../config/constants'
 import { apiLogger as logger } from '../../core/Logger'
+import { PdfProcessor } from '../../services/PdfProcessor'
 
 /**
  * Endpoint for comprehensive URL analysis
@@ -12,10 +13,12 @@ import { apiLogger as logger } from '../../core/Logger'
  */
 export class AnalyzeUrlEndpoint extends BaseEndpoint {
   private webTranslator: WebTranslator
+  private pdfProcessor: PdfProcessor
 
   constructor(serviceManager: ServiceManager) {
     super(API_ENDPOINTS.ANALYZE_URL, serviceManager, ['POST'])
     this.webTranslator = new WebTranslator()
+    this.pdfProcessor = new PdfProcessor()
   }
 
   /**
@@ -72,7 +75,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
       let pageTitle = ''
 
       try {
-        // Step 1: Check if items with same URL exist in library
+        //: Step 1: Check if items with same URL exist in library
         logger.info('Step 1: Checking for existing items with same URL')
         const existingItems = await this.findItemsByUrl(url!)
 
@@ -83,7 +86,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           return this.successResponse(response)
         }
 
-        // Step 2: Extract identifiers from URL itself (fast check)
+        //: Step 2: Extract identifiers from URL itself (fast check)
         logger.info('Step 2: Extracting identifiers from URL')
         try {
           const urlIdentifierResults = await IdentifierExtractor.extractIdentifiersFromURL(url!)
@@ -98,7 +101,36 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           logger.debug(`No identifiers found in URL: ${error}`)
         }
 
-        // Step 3: Extract identifiers from HTML content
+        //: Step 3: Make sure the URL is accessible
+        // TODO: Make sure a GET request to the URL returns a 200 status code
+        // TODO: If the URL is not accessible, set the response to an appropriate error, and return the response
+        // TODO: If the URL is accessible, continue with the analysis
+
+        //: Step 3.1: Extract identifiers from PDF content
+        if (UrlUtils.isPdfUrl(url!)) {
+          logger.info('URL is a PDF - skipping HTML content extraction')
+          const pdfResult = await this.pdfProcessor.processPdfFromUrl(url!)
+
+          if (pdfResult.success && pdfResult.identifiers) {
+            response.identifiers = pdfResult.identifiers
+            response.validIdentifiers = pdfResult.identifiers
+            logger.info(`Found ${Object.values(pdfResult.identifiers).filter(i => i !== null).length} identifiers in PDF`)
+            //: Step 3.1.1: Extract identifiers from PDF content
+            // TODO: Process identifiers found in PDF, validate them and add to response
+
+            //: Step 3.1.2: If no identifiers found in PDF, ask Perplexity to extract identifiers from the PDF file
+            // TODO: This step may require to write a new prompt for Perplexity to extract identifiers from the PDF file
+            // TODO: This step needs the Perplexity service to allow for file upload to be implemented
+            // TODO: Ask Perplexity to extract identifiers from the PDF file, attaching the PDF file to the request
+            // TODO: Process identifiers found in PDF, validate them and add to response, remember to check identifiers disambiguation, adjust the prompt if needed for Perplexity to output the required information
+
+            //: Step 3.1.3: If no identifiers found in PDF at this point, and the PDF content is accessible, set the response to aiTranslation = true, and return the response
+            return this.successResponse(response)
+          }
+          return this.successResponse(response)
+        }
+
+        //: Step 3.2: Extract identifiers from HTML content
         logger.info('Step 3: Extracting identifiers from HTML content')
         try {
           // Load document

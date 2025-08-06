@@ -28,9 +28,10 @@ export class ResponseBuilder {
    * Build an error response
    * @param error - Error object or message
    * @param statusCode - HTTP status code
+   * @param additionalData - Additional data to include in response
    * @returns Formatted error response array [statusCode, contentType, body]
    */
-  static error(error: Error | string, statusCode?: number): [number, string, string] {
+  static error(error: Error | string, statusCode?: number, additionalData?: any): [number, string, string] {
     let message: string
     let code: number
 
@@ -55,6 +56,7 @@ export class ResponseBuilder {
         code,
         timestamp: new Date().toISOString(),
       },
+      ...(additionalData && { data: additionalData }),
     }
 
     logger.error(`Error response ${code}: ${message}`)

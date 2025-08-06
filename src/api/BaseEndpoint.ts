@@ -115,10 +115,11 @@ export abstract class BaseEndpoint {
    * Create error response
    * @param error - Error object or message
    * @param statusCode - HTTP status code
+   * @param additionalData - Additional data to include in response
    * @returns Formatted error response
    */
-  protected errorResponse(error: Error | string, statusCode?: number) {
-    return ResponseBuilder.error(error, statusCode)
+  protected errorResponse(error: Error | string, statusCode?: number, additionalData?: any) {
+    return ResponseBuilder.error(error, statusCode, additionalData)
   }
 
   /**

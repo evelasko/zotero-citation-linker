@@ -30,6 +30,10 @@ export const DEFAULT_PREFERENCES = {
   forbiddenTitlePatterns: ['untitled', 'no title', 'placeholder', 'document'],
   forbiddenAuthorPatterns: ['unknown', 'anonymous', '[s.n.]', 'n/a'],
   perplexityApiKey: '',
+  // PDF Processing Configuration
+  maxPdfSize: 50 * 1024 * 1024, // 50MB default limit
+  maxPdfPages: 10, // Max pages to extract for initial analysis
+  enablePdfProcessing: true, // Enable/disable PDF content extraction
 }
 
 // API Endpoints
@@ -204,4 +208,19 @@ export const LOG_LEVELS = {
   WARN: 'warn',
   INFO: 'info',
   DEBUG: 'debug',
+}
+
+// PDF Processing Configuration
+export const PDF_PROCESSING = {
+  MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
+  MAX_EXTRACTION_PAGES: 10, // Pages to extract for initial analysis
+  EXTRACTION_TIMEOUT: 30000, // 30 seconds
+  TEMP_FILE_PREFIX: 'citationlinker_',
+  // Patterns for extracting identifiers from PDF text
+  IDENTIFIER_PATTERNS: {
+    DOI: /10\.\d{4,}(?:\.\d+)*\/[-._;()/:a-zA-Z0-9]+/gi,
+    ARXIV: /arXiv[:\s]*(\d{4}\.\d{4,5}(?:v\d+)?)/gi,
+    PMID: /PMID\s*:?\s*(\d{7,8})/gi,
+    ISBN: /ISBN[\s-]*(?:13|10)?[\s-]*:?\s*([\d-]{10,17})/gi,
+  },
 }
