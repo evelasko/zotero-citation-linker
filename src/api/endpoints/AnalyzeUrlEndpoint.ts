@@ -58,6 +58,10 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         validIdentifiers: [],
         webTranslators: [],
         status: 'success',
+        processingRecommendation: null,
+        urlAccessible: false,
+        contentType: 'unknown',
+        httpStatusCode: null,
         timestamp: new Date().toISOString(),
         errors: [],
         // DOI disambiguation fields (optional)
@@ -82,6 +86,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         if (existingItems && existingItems.length > 0) {
           const firstItem = existingItems[0]
           response.itemKey = firstItem.key
+          response.processingRecommendation = 'already-stored'
           logger.info(`Found existing item with same URL: ${firstItem.key}`)
           return this.successResponse(response)
         }
@@ -94,6 +99,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           if (urlIdentifierResults.validIdentifiers.length > 0) {
             response.identifiers = urlIdentifierResults.identifiers
             response.validIdentifiers = urlIdentifierResults.validIdentifiers
+            response.processingRecommendation = 'extractable'
             logger.info(`Found ${urlIdentifierResults.validIdentifiers.length} valid identifiers in URL`)
             return this.successResponse(response)
           }
@@ -101,51 +107,101 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           logger.debug(`No identifiers found in URL: ${error}`)
         }
 
-        //: Step 3: Make sure the URL is accessible
-        // TODO: Make sure a GET request to the URL returns a 200 status code
-        // TODO: If the URL is not accessible, set the response to an appropriate error, and return the response
-        // TODO: If the URL is accessible, continue with the analysis
-
-        //: Step 3.1: Extract identifiers from PDF content
-        if (UrlUtils.isPdfUrl(url!)) {
-          logger.info('URL is a PDF - skipping HTML content extraction')
-          const pdfResult = await this.pdfProcessor.processPdfFromUrl(url!)
-
-          if (pdfResult.success && pdfResult.identifiers) {
-            response.identifiers = pdfResult.identifiers
-            response.validIdentifiers = pdfResult.identifiers
-            logger.info(`Found ${Object.values(pdfResult.identifiers).filter(i => i !== null).length} identifiers in PDF`)
-            //: Step 3.1.1: Extract identifiers from PDF content
-            // TODO: Process identifiers found in PDF, validate them and add to response
-
-            //: Step 3.1.2: If no identifiers found in PDF, ask Perplexity to extract identifiers from the PDF file
-            // TODO: This step may require to write a new prompt for Perplexity to extract identifiers from the PDF file
-            // TODO: This step needs the Perplexity service to allow for file upload to be implemented
-            // TODO: Ask Perplexity to extract identifiers from the PDF file, attaching the PDF file to the request
-            // TODO: Process identifiers found in PDF, validate them and add to response, remember to check identifiers disambiguation, adjust the prompt if needed for Perplexity to output the required information
-
-            //: Step 3.1.3: If no identifiers found in PDF at this point, and the PDF content is accessible, set the response to aiTranslation = true, and return the response
-            return this.successResponse(response)
-          }
-          return this.successResponse(response)
-        }
-
-        //: Step 3.2: Extract identifiers from HTML content
-        logger.info('Step 3: Extracting identifiers from HTML content')
+        //: Step 3: Check URL accessibility and determine content type
+        logger.info('Step 3: Checking URL accessibility and content type')
         try {
-          // Load document
-          const document = await IdentifierExtractor.loadDocument(url!)
-
-          // Fetch HTML content
+          // Perform initial HEAD/GET request to check accessibility
           httpResponse = await Zotero.HTTP.request('GET', url!, {
             headers: {
               'User-Agent': 'Mozilla/5.0 (compatible; Zotero Citation Linker)',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept': 'text/html,application/xhtml+xml,application/xml,application/pdf;q=0.9,*/*;q=0.8',
               'Accept-Language': 'en-US,en;q=0.5',
             },
             timeout: 30000,
             followRedirects: true,
           })
+
+          response.httpStatusCode = httpResponse.status
+          response.urlAccessible = httpResponse.status === 200
+
+          if (httpResponse.status !== 200) {
+            response.processingRecommendation = 'unreachable'
+            logger.warn(`URL not accessible: HTTP ${httpResponse.status}`)
+            return this.successResponse(response)
+          }
+
+          // Determine content type
+          const contentTypeHeader = httpResponse.getResponseHeader('content-type') || ''
+          if (contentTypeHeader.includes('application/pdf') || UrlUtils.isPdfUrl(url!)) {
+            response.contentType = 'pdf'
+          } else if (contentTypeHeader.includes('text/html') || contentTypeHeader.includes('application/xhtml+xml')) {
+            response.contentType = 'html'
+          } else {
+            response.contentType = 'unknown'
+          }
+
+          logger.info(`URL accessible (HTTP ${httpResponse.status}), content type: ${response.contentType}`)
+
+        } catch (error) {
+          logger.error(`Error checking URL accessibility: ${error}`)
+          response.httpStatusCode = 0
+          response.processingRecommendation = 'unreachable'
+          response.errors.push(`URL accessibility check failed: ${error}`)
+          return this.successResponse(response)
+        }
+
+        //: Step 3.1: Extract identifiers from PDF content
+        if (response.contentType === 'pdf') {
+          logger.info('Processing PDF content for identifier extraction')
+          try {
+            const pdfResult = await this.pdfProcessor.processPdfFromUrl(url!)
+
+            if (pdfResult.success && pdfResult.identifiers) {
+              // Process and validate PDF identifiers
+              const validIdentifiers = []
+              const allIdentifiers = []
+
+              // Extract identifiers from pdfResult and validate them
+              Object.values(pdfResult.identifiers).forEach((identifier) => {
+                if (identifier) {
+                  allIdentifiers.push(identifier)
+                  // TODO: Add proper validation for each identifier type
+                  validIdentifiers.push(identifier)
+                }
+              })
+
+              if (validIdentifiers.length > 0) {
+                response.identifiers = allIdentifiers
+                response.validIdentifiers = validIdentifiers
+                response.processingRecommendation = 'extractable'
+                logger.info(`Found ${validIdentifiers.length} valid identifiers in PDF`)
+                return this.successResponse(response)
+              }
+            }
+
+            // If no identifiers found in PDF but content is accessible, mark as AI-resolvable
+            if (response.urlAccessible) {
+              response.processingRecommendation = 'ai-resolvable'
+              response.aiTranslation = true
+              logger.info('No identifiers found in PDF, but content is accessible for AI processing')
+              return this.successResponse(response)
+            }
+
+          } catch (error) {
+            logger.error(`Error processing PDF: ${error}`)
+            response.errors.push(`PDF processing failed: ${error}`)
+            // Continue to other processing steps
+          }
+        }
+
+        //: Step 3.2: Extract identifiers from HTML content
+        if (response.contentType === 'html' || response.contentType === 'unknown') {
+          logger.info('Processing HTML/unknown content for identifier extraction')
+          try {
+            // Load document
+            const document = await IdentifierExtractor.loadDocument(url!)
+
+            // Use existing httpResponse from accessibility check
 
           if (httpResponse.responseText) {
             // Extract page title for DOI disambiguation
@@ -163,6 +219,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
 
             if (identifierResults.validIdentifiers.length > 0) {
               logger.info(`Found ${identifierResults.validIdentifiers.length} valid identifiers`)
+              response.processingRecommendation = 'extractable'
 
               // Enhanced: Use DOI disambiguation if multiple DOIs found
               if (identifierResults.validIdentifiers.length > 1) {
@@ -211,9 +268,10 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           } else {
             throw new Error('Empty HTML response from URL')
           }
-        } catch (error) {
-          logger.error(`Error extracting identifiers: ${error}`)
-          response.errors.push(`Identifier extraction failed: ${error}`)
+          } catch (error) {
+            logger.error(`Error extracting HTML identifiers: ${error}`)
+            response.errors.push(`HTML identifier extraction failed: ${error}`)
+          }
         }
 
         // Step 4: Detect web translators
@@ -228,6 +286,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
               creator: translator.creator,
               priority: translator.priority,
             }))
+            response.processingRecommendation = 'translatable'
             logger.info(`Found ${webTranslators.length} web translators`)
             return this.successResponse(response)
           }
@@ -277,6 +336,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
                 response.primaryDOIScore = 0.95 // High confidence for AI-found identifiers
                 response.primaryDOIConfidence = 'high'
                 response.aiTranslation = true
+                response.processingRecommendation = 'extractable'
                 logger.info(`AI extracted ${aiIdentifiers.length} identifiers successfully`)
                 return this.successResponse(response)
               }
@@ -293,18 +353,24 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
           response.errors.push(`AI identifier extraction failed: ${error}`)
         }
 
-        // Check if URL is accessible for potential AI processing
-        if (httpResponse && httpResponse.status === 200) {
-          response.aiTranslation = true // Indicates AI can process this URL
-          logger.info('URL is accessible - AI translation available via processurlwithai endpoint')
+        // Final processing recommendation based on what we found
+        if (!response.processingRecommendation) {
+          if (response.urlAccessible) {
+            response.processingRecommendation = 'ai-resolvable'
+            response.aiTranslation = true
+            logger.info('URL is accessible but no identifiers/translators found - AI processing available')
+          } else {
+            response.processingRecommendation = 'errored'
+            logger.warn('URL analysis completed with no viable processing options')
+          }
         }
 
-        // If we reach here, no analysis method found anything useful
+        // Update status based on errors and success
         if (response.errors.length > 0) {
           response.status = 'partial_success'
           logger.warn(`URL analysis completed with errors: ${response.errors.join('; ')}`)
         } else {
-          logger.info('URL analysis completed - no items, identifiers, or translators found')
+          logger.info(`URL analysis completed - processing recommendation: ${response.processingRecommendation}`)
         }
 
         return this.successResponse(response)
@@ -313,6 +379,7 @@ export class AnalyzeUrlEndpoint extends BaseEndpoint {
         logger.error(`Error in URL analysis steps: ${error}`)
         response.errors.push(`Analysis failed: ${error}`)
         response.status = 'error'
+        response.processingRecommendation = 'errored'
         return this.successResponse(response)
       }
     } catch (error) {
