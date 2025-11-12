@@ -2,6 +2,7 @@
 
 import { Plugin } from './src/core/Plugin'
 import { logger } from './src/core/Logger'
+import { PLUGIN_VERSION } from './src/config/constants'
 
 // Declare the toolkit variable that's passed from bootstrap.js
 // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
@@ -49,6 +50,8 @@ if (Zotero.platformMajorVersion < 102) {
 
   constructor() {
     logger.info('Initializing Zotero Citation Linker with modular architecture')
+    // Log plugin version for development verification
+    logger.info(`Plugin Version: ${PLUGIN_VERSION}`)
     // Log environment mode
     logger.info(`Environment: ${process.env.NODE_ENV === 'development' ? 'Development' : 'Production'}`)
     this.plugin = new Plugin()

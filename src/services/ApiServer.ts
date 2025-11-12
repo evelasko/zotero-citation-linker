@@ -4,12 +4,16 @@ import { serviceLogger as logger } from '../core/Logger'
 import { DEFAULT_API_PORT } from '../config/constants'
 // Import all endpoints
 import { ProcessUrlEndpoint } from '../api/endpoints/ProcessUrlEndpoint'
+import { PreviewUrlEndpoint } from '../api/endpoints/PreviewUrlEndpoint'
 import { ProcessUrlWithAiEndpoint } from '../api/endpoints/ProcessUrlWithAiEndpoint'
 import { AnalyzeUrlEndpoint } from '../api/endpoints/AnalyzeUrlEndpoint'
 import { ProcessIdentifierEndpoint } from '../api/endpoints/ProcessIdentifierEndpoint'
+import { PreviewIdentifierEndpoint } from '../api/endpoints/PreviewIdentifierEndpoint'
 import { DetectIdentifierEndpoint } from '../api/endpoints/DetectIdentifierEndpoint'
 import { SaveWebpageEndpoint } from '../api/endpoints/SaveWebpageEndpoint'
 import { ItemKeyByUrlEndpoint } from '../api/endpoints/ItemKeyByUrlEndpoint'
+import { DeleteItemEndpoint } from '../api/endpoints/DeleteItemEndpoint'
+import { GetItemEndpoint } from '../api/endpoints/GetItemEndpoint'
 
 /**
  * API Server service for managing HTTP endpoints
@@ -95,12 +99,16 @@ export class ApiServer implements IService {
   private async initializeEndpoints(): Promise<void> {
     const endpointClasses = [
       ProcessUrlEndpoint,
+      PreviewUrlEndpoint,
       ProcessUrlWithAiEndpoint,
       AnalyzeUrlEndpoint,
       ProcessIdentifierEndpoint,
+      PreviewIdentifierEndpoint,
       DetectIdentifierEndpoint,
       SaveWebpageEndpoint,
       ItemKeyByUrlEndpoint,
+      DeleteItemEndpoint,
+      GetItemEndpoint,
     ]
 
     logger.info(`Initializing ${endpointClasses.length} API endpoints`)

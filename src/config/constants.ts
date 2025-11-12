@@ -5,7 +5,7 @@
 // Plugin Information
 export const PLUGIN_NAME = 'ZoteroCitationLinker'
 export const PLUGIN_ID = 'zotero-citation-linker@evelasko.com'
-export const PLUGIN_VERSION = '1.4.0'
+export const PLUGIN_VERSION = '1.5.3'
 
 // API Configuration
 export const DEFAULT_API_PORT = 23119
@@ -40,12 +40,16 @@ export const DEFAULT_PREFERENCES = {
 export const API_ENDPOINTS = {
   ANALYZE_URL: `${API_BASE_PATH}/analyzeurl`,
   PROCESS_URL: `${API_BASE_PATH}/processurl`,
+  PREVIEW_URL: `${API_BASE_PATH}/previewurl`,
   PROCESS_URL_WITH_AI: `${API_BASE_PATH}/processurlwithai`,
   PROCESS_IDENTIFIER: `${API_BASE_PATH}/processidentifier`,
+  PREVIEW_IDENTIFIER: `${API_BASE_PATH}/previewidentifier`,
   DETECT_IDENTIFIER: `${API_BASE_PATH}/detectidentifier`,
   SAVE_WEBPAGE: `${API_BASE_PATH}/savewebpage`,
   ITEM_KEY_BY_URL: `${API_BASE_PATH}/itemkeybyurl`,
   CREATE_ITEM: `${API_BASE_PATH}/createitem`,
+  DELETE_ITEM: `${API_BASE_PATH}/deleteitem`,
+  GET_ITEM: `${API_BASE_PATH}/item`,
 }
 
 // Identifier Patterns - Context-aware patterns to avoid false positives
