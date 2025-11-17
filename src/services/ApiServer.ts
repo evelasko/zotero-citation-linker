@@ -9,11 +9,13 @@ import { ProcessUrlWithAiEndpoint } from '../api/endpoints/ProcessUrlWithAiEndpo
 import { AnalyzeUrlEndpoint } from '../api/endpoints/AnalyzeUrlEndpoint'
 import { ProcessIdentifierEndpoint } from '../api/endpoints/ProcessIdentifierEndpoint'
 import { PreviewIdentifierEndpoint } from '../api/endpoints/PreviewIdentifierEndpoint'
+import { PreviewPdfEndpoint } from '../api/endpoints/PreviewPdfEndpoint'
 import { DetectIdentifierEndpoint } from '../api/endpoints/DetectIdentifierEndpoint'
 import { SaveWebpageEndpoint } from '../api/endpoints/SaveWebpageEndpoint'
 import { ItemKeyByUrlEndpoint } from '../api/endpoints/ItemKeyByUrlEndpoint'
 import { DeleteItemEndpoint } from '../api/endpoints/DeleteItemEndpoint'
 import { GetItemEndpoint } from '../api/endpoints/GetItemEndpoint'
+import { EditItemEndpoint } from '../api/endpoints/EditItemEndpoint'
 
 /**
  * API Server service for managing HTTP endpoints
@@ -104,11 +106,13 @@ export class ApiServer implements IService {
       AnalyzeUrlEndpoint,
       ProcessIdentifierEndpoint,
       PreviewIdentifierEndpoint,
+      PreviewPdfEndpoint,
       DetectIdentifierEndpoint,
       SaveWebpageEndpoint,
       ItemKeyByUrlEndpoint,
       DeleteItemEndpoint,
       GetItemEndpoint,
+      EditItemEndpoint,
     ]
 
     logger.info(`Initializing ${endpointClasses.length} API endpoints`)

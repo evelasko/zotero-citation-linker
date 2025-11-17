@@ -5,7 +5,7 @@
 // Plugin Information
 export const PLUGIN_NAME = 'ZoteroCitationLinker'
 export const PLUGIN_ID = 'zotero-citation-linker@evelasko.com'
-export const PLUGIN_VERSION = '1.5.3'
+export const PLUGIN_VERSION = '1.5.5+3'
 
 // API Configuration
 export const DEFAULT_API_PORT = 23119
@@ -34,6 +34,8 @@ export const DEFAULT_PREFERENCES = {
   maxPdfSize: 50 * 1024 * 1024, // 50MB default limit
   maxPdfPages: 10, // Max pages to extract for initial analysis
   enablePdfProcessing: true, // Enable/disable PDF content extraction
+  maxPdfUploadSize: 50 * 1024 * 1024, // 50MB max upload size for preview endpoint
+  maxPdfPagesToAnalyze: 10, // Limit pages to scan for identifiers in preview
 }
 
 // API Endpoints
@@ -44,12 +46,14 @@ export const API_ENDPOINTS = {
   PROCESS_URL_WITH_AI: `${API_BASE_PATH}/processurlwithai`,
   PROCESS_IDENTIFIER: `${API_BASE_PATH}/processidentifier`,
   PREVIEW_IDENTIFIER: `${API_BASE_PATH}/previewidentifier`,
+  PREVIEW_PDF: `${API_BASE_PATH}/previewpdf`,
   DETECT_IDENTIFIER: `${API_BASE_PATH}/detectidentifier`,
   SAVE_WEBPAGE: `${API_BASE_PATH}/savewebpage`,
   ITEM_KEY_BY_URL: `${API_BASE_PATH}/itemkeybyurl`,
   CREATE_ITEM: `${API_BASE_PATH}/createitem`,
   DELETE_ITEM: `${API_BASE_PATH}/deleteitem`,
   GET_ITEM: `${API_BASE_PATH}/item`,
+  EDIT_ITEM: `${API_BASE_PATH}/edititem`,
 }
 
 // Identifier Patterns - Context-aware patterns to avoid false positives
